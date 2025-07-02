@@ -1,0 +1,145 @@
+2025-07-02 16:07:35,685 - __main__ - INFO - ================================================================================
+2025-07-02 16:07:35,685 - __main__ - INFO - DEEPSEEK R1 ZERO GRPO TRAINING CONFIGURATION
+2025-07-02 16:07:35,685 - __main__ - INFO - ================================================================================
+2025-07-02 16:07:35,685 - __main__ - INFO - Model: ./models/Qwen2.5-0.5B
+2025-07-02 16:07:35,685 - __main__ - INFO - Dataset: AI-MO/NuminaMath-TIR
+2025-07-02 16:07:35,685 - __main__ - INFO - Output Directory: ./grpo_output
+2025-07-02 16:07:35,685 - __main__ - INFO - Reward Functions: ['accuracy', 'format', 'reasoning_steps', 'cosine', 'repetition_penalty']
+2025-07-02 16:07:35,685 - __main__ - INFO - Learning Rate: 5e-05
+2025-07-02 16:07:35,686 - __main__ - INFO - Batch Size: 2
+2025-07-02 16:07:35,686 - __main__ - INFO - Epochs: 0.005
+2025-07-02 16:07:35,686 - __main__ - INFO - Logging Steps: 5
+2025-07-02 16:07:35,686 - __main__ - INFO - Seed: 42
+2025-07-02 16:07:35,686 - __main__ - INFO - CUDA Device: NVIDIA L40S
+2025-07-02 16:07:35,686 - __main__ - INFO - GPU Memory: 47.7 GB
+2025-07-02 16:07:35,686 - __main__ - INFO - ================================================================================
+2025-07-02 16:07:35,686 - __main__ - INFO - Loading model: ./models/Qwen2.5-0.5B
+2025-07-02 16:07:36,438 - accelerate.utils.modeling - INFO - We will use 90% of the memory on device 0 for storing the model, and 10% for the buffer to avoid OOM. You can set `max_memory` in to a higher value to use more memory (at your own risk).
+2025-07-02 16:07:39,529 - __main__ - INFO - Model loaded: qwen2
+2025-07-02 16:07:39,530 - __main__ - INFO - Model parameters: 494,032,768
+2025-07-02 16:07:39,530 - __main__ - INFO - Loading dataset: AI-MO/NuminaMath-TIR
+2025-07-02 16:07:45,878 - __main__ - INFO - Training dataset size: 72441
+2025-07-02 16:07:45,878 - __main__ - INFO - Initialized 5 reward functions
+2025-07-02 16:07:45,878 - __main__ - INFO - Initialized 2 comprehensive callbacks
+2025-07-02 16:07:45,879 - __main__ - INFO - Creating real GRPOTrainer following tutorial specifications...
+2025-07-02 16:07:45,902 - __main__ - ERROR - 
+Training failed with error: The effective train batch size (1 x 2 x 2) must be evenly divisible by the number of generations per prompt (8). Given the current effective train batch size, the valid values for the number of generations are: [2, 4].
+2025-07-02 16:08:15,537 - __main__ - INFO - ================================================================================
+2025-07-02 16:08:15,537 - __main__ - INFO - DEEPSEEK R1 ZERO GRPO TRAINING CONFIGURATION
+2025-07-02 16:08:15,537 - __main__ - INFO - ================================================================================
+2025-07-02 16:08:15,537 - __main__ - INFO - Model: ./models/Qwen2.5-0.5B
+2025-07-02 16:08:15,537 - __main__ - INFO - Dataset: AI-MO/NuminaMath-TIR
+2025-07-02 16:08:15,538 - __main__ - INFO - Output Directory: ./grpo_output
+2025-07-02 16:08:15,538 - __main__ - INFO - Reward Functions: ['accuracy', 'format', 'reasoning_steps', 'cosine', 'repetition_penalty']
+2025-07-02 16:08:15,538 - __main__ - INFO - Learning Rate: 5e-05
+2025-07-02 16:08:15,538 - __main__ - INFO - Batch Size: 4
+2025-07-02 16:08:15,538 - __main__ - INFO - Epochs: 0.005
+2025-07-02 16:08:15,538 - __main__ - INFO - Logging Steps: 5
+2025-07-02 16:08:15,538 - __main__ - INFO - Seed: 42
+2025-07-02 16:08:15,538 - __main__ - INFO - CUDA Device: NVIDIA L40S
+2025-07-02 16:08:15,538 - __main__ - INFO - GPU Memory: 47.7 GB
+2025-07-02 16:08:15,538 - __main__ - INFO - ================================================================================
+2025-07-02 16:08:15,538 - __main__ - INFO - Loading model: ./models/Qwen2.5-0.5B
+2025-07-02 16:08:16,111 - accelerate.utils.modeling - INFO - We will use 90% of the memory on device 0 for storing the model, and 10% for the buffer to avoid OOM. You can set `max_memory` in to a higher value to use more memory (at your own risk).
+2025-07-02 16:08:16,397 - __main__ - INFO - Model loaded: qwen2
+2025-07-02 16:08:16,398 - __main__ - INFO - Model parameters: 494,032,768
+2025-07-02 16:08:16,398 - __main__ - INFO - Loading dataset: AI-MO/NuminaMath-TIR
+2025-07-02 16:08:22,583 - __main__ - INFO - Training dataset size: 72441
+2025-07-02 16:08:22,584 - __main__ - INFO - Initialized 5 reward functions
+2025-07-02 16:08:22,584 - __main__ - INFO - Initialized 2 comprehensive callbacks
+2025-07-02 16:08:22,584 - __main__ - INFO - Creating real GRPOTrainer following tutorial specifications...
+2025-07-02 16:08:23,134 - root - INFO - cc -pthread -Wsign-compare -Wunreachable-code -DNDEBUG -g -fwrapv -O3 -Wall -fPIC -fPIC -c /tmp/tmpq3hmxy19/test.c -o /tmp/tmpq3hmxy19/test.o
+2025-07-02 16:08:23,153 - root - INFO - cc -pthread /tmp/tmpq3hmxy19/test.o -laio -o /tmp/tmpq3hmxy19/a.out
+2025-07-02 16:08:23,599 - root - INFO - cc -pthread -Wsign-compare -Wunreachable-code -DNDEBUG -g -fwrapv -O3 -Wall -fPIC -fPIC -c /tmp/tmp_vermvq_/test.c -o /tmp/tmp_vermvq_/test.o
+2025-07-02 16:08:23,619 - root - INFO - cc -pthread /tmp/tmp_vermvq_/test.o -L/usr/local/cuda -L/usr/local/cuda/lib64 -lcufile -o /tmp/tmp_vermvq_/a.out
+2025-07-02 16:08:23,674 - root - INFO - cc -pthread -Wsign-compare -Wunreachable-code -DNDEBUG -g -fwrapv -O3 -Wall -fPIC -fPIC -c /tmp/tmpx_36ilcq/test.c -o /tmp/tmpx_36ilcq/test.o
+2025-07-02 16:08:23,692 - root - INFO - cc -pthread /tmp/tmpx_36ilcq/test.o -laio -o /tmp/tmpx_36ilcq/a.out
+2025-07-02 16:08:24,756 - __main__ - INFO - ✅ Real GRPOTrainer created successfully
+2025-07-02 16:08:24,756 - __main__ - INFO -    Model: qwen2
+2025-07-02 16:08:24,756 - __main__ - INFO -    Reward functions: 5
+2025-07-02 16:08:24,756 - __main__ - INFO -    Callbacks: 2
+2025-07-02 16:08:24,756 - __main__ - INFO -    Training dataset size: 72441
+2025-07-02 16:08:24,756 - __main__ - INFO - 🚀 Starting real GRPO training loop...
+2025-07-02 16:09:20,198 - src.config.grpo_config - INFO - Performance:
+2025-07-02 16:09:20,198 - src.config.grpo_config - INFO -   Step time:       7.68s
+2025-07-02 16:09:20,198 - src.config.grpo_config - INFO -   Samples/sec:      0.5
+2025-07-02 16:09:20,199 - src.config.grpo_config - INFO -   GPU memory:      5.54GB (reserved:   6.58GB)
+2025-07-02 16:09:20,199 - src.config.grpo_config - INFO -   RAM usage:      14.21GB ( 47.6%)
+2025-07-02 16:09:20,199 - src.config.grpo_config - INFO -   CPU usage:      56.7%
+2025-07-02 16:09:58,562 - src.config.grpo_config - INFO - Step   10 | Loss: -0.0651 | LR: 5.41e-06 | Epoch: 0.00
+2025-07-02 16:09:58,563 - src.config.grpo_config - INFO - Performance:
+2025-07-02 16:09:58,563 - src.config.grpo_config - INFO -   Step time:       7.63s
+2025-07-02 16:09:58,563 - src.config.grpo_config - INFO -   Samples/sec:      0.5
+2025-07-02 16:09:58,563 - src.config.grpo_config - INFO -   GPU memory:      5.54GB (reserved:   6.58GB)
+2025-07-02 16:09:58,563 - src.config.grpo_config - INFO -   RAM usage:      14.21GB ( 47.6%)
+2025-07-02 16:09:58,563 - src.config.grpo_config - INFO -   CPU usage:      55.4%
+2025-07-02 16:10:37,063 - src.config.grpo_config - INFO - Step   15 | Loss: -0.0737 | LR: 1.22e-05 | Epoch: 0.00
+2025-07-02 16:10:37,064 - src.config.grpo_config - INFO - Performance:
+2025-07-02 16:10:37,064 - src.config.grpo_config - INFO -   Step time:       7.71s
+2025-07-02 16:10:37,064 - src.config.grpo_config - INFO -   Samples/sec:      0.5
+2025-07-02 16:10:37,064 - src.config.grpo_config - INFO -   GPU memory:      5.54GB (reserved:   6.59GB)
+2025-07-02 16:10:37,064 - src.config.grpo_config - INFO -   RAM usage:      14.23GB ( 47.7%)
+2025-07-02 16:10:37,064 - src.config.grpo_config - INFO -   CPU usage:      55.9%
+2025-07-02 16:22:01,162 - __main__ - INFO - ================================================================================
+2025-07-02 16:22:01,163 - __main__ - INFO - DEEPSEEK R1 ZERO GRPO TRAINING CONFIGURATION
+2025-07-02 16:22:01,163 - __main__ - INFO - ================================================================================
+2025-07-02 16:22:01,163 - __main__ - INFO - Model: ./models/Qwen2.5-3B-Instruct
+2025-07-02 16:22:01,163 - __main__ - INFO - Dataset: AI-MO/NuminaMath-TIR
+2025-07-02 16:22:01,163 - __main__ - INFO - Output Directory: ./grpo_output
+2025-07-02 16:22:01,164 - __main__ - INFO - Reward Functions: ['accuracy', 'format', 'reasoning_steps']
+2025-07-02 16:22:01,164 - __main__ - INFO - Learning Rate: 5e-05
+2025-07-02 16:22:01,164 - __main__ - INFO - Batch Size: 4
+2025-07-02 16:22:01,164 - __main__ - INFO - Epochs: 1
+2025-07-02 16:22:01,164 - __main__ - INFO - Logging Steps: 5
+2025-07-02 16:22:01,164 - __main__ - INFO - Seed: 42
+2025-07-02 16:22:01,164 - __main__ - INFO - CUDA Device: NVIDIA L40S
+2025-07-02 16:22:01,164 - __main__ - INFO - GPU Memory: 47.7 GB
+2025-07-02 16:22:01,164 - __main__ - INFO - ================================================================================
+2025-07-02 16:22:01,164 - __main__ - INFO - Loading model: ./models/Qwen2.5-3B-Instruct
+2025-07-02 16:22:01,794 - accelerate.utils.modeling - INFO - We will use 90% of the memory on device 0 for storing the model, and 10% for the buffer to avoid OOM. You can set `max_memory` in to a higher value to use more memory (at your own risk).
+2025-07-02 16:22:05,418 - __main__ - INFO - Model loaded: qwen2
+2025-07-02 16:22:05,419 - __main__ - INFO - Model parameters: 3,085,938,688
+2025-07-02 16:22:05,419 - __main__ - INFO - Loading dataset: AI-MO/NuminaMath-TIR
+2025-07-02 16:22:12,227 - __main__ - INFO - Training dataset size: 72441
+2025-07-02 16:22:12,228 - __main__ - INFO - Initialized 3 reward functions
+2025-07-02 16:22:12,228 - __main__ - INFO - Initialized 2 comprehensive callbacks
+2025-07-02 16:22:12,228 - __main__ - INFO - Creating real GRPOTrainer following tutorial specifications...
+2025-07-02 16:22:12,570 - root - INFO - cc -pthread -Wsign-compare -Wunreachable-code -DNDEBUG -g -fwrapv -O3 -Wall -fPIC -fPIC -c /tmp/tmpzdm_cpa7/test.c -o /tmp/tmpzdm_cpa7/test.o
+2025-07-02 16:22:12,604 - root - INFO - cc -pthread /tmp/tmpzdm_cpa7/test.o -laio -o /tmp/tmpzdm_cpa7/a.out
+2025-07-02 16:22:13,052 - root - INFO - cc -pthread -Wsign-compare -Wunreachable-code -DNDEBUG -g -fwrapv -O3 -Wall -fPIC -fPIC -c /tmp/tmp48o_59kv/test.c -o /tmp/tmp48o_59kv/test.o
+2025-07-02 16:22:13,070 - root - INFO - cc -pthread /tmp/tmp48o_59kv/test.o -L/usr/local/cuda -L/usr/local/cuda/lib64 -lcufile -o /tmp/tmp48o_59kv/a.out
+2025-07-02 16:22:13,137 - root - INFO - cc -pthread -Wsign-compare -Wunreachable-code -DNDEBUG -g -fwrapv -O3 -Wall -fPIC -fPIC -c /tmp/tmp4us53yeq/test.c -o /tmp/tmp4us53yeq/test.o
+2025-07-02 16:22:13,154 - root - INFO - cc -pthread /tmp/tmp4us53yeq/test.o -laio -o /tmp/tmp4us53yeq/a.out
+2025-07-02 16:22:14,194 - __main__ - INFO - ✅ Real GRPOTrainer created successfully
+2025-07-02 16:22:14,194 - __main__ - INFO -    Model: qwen2
+2025-07-02 16:22:14,194 - __main__ - INFO -    Reward functions: 3
+2025-07-02 16:22:14,194 - __main__ - INFO -    Callbacks: 2
+2025-07-02 16:22:14,194 - __main__ - INFO -    Training dataset size: 72441
+2025-07-02 16:22:14,194 - __main__ - INFO - 🚀 Starting real GRPO training loop...
+2025-07-02 16:23:28,934 - src.config.grpo_config - INFO - Performance:
+2025-07-02 16:23:28,934 - src.config.grpo_config - INFO -   Step time:      11.56s
+2025-07-02 16:23:28,934 - src.config.grpo_config - INFO -   Samples/sec:      0.3
+2025-07-02 16:23:28,934 - src.config.grpo_config - INFO -   GPU memory:     29.11GB (reserved:  30.30GB)
+2025-07-02 16:23:28,935 - src.config.grpo_config - INFO -   RAM usage:      14.16GB ( 47.5%)
+2025-07-02 16:23:28,935 - src.config.grpo_config - INFO -   CPU usage:      56.6%
+2025-07-02 16:24:27,400 - src.config.grpo_config - INFO - Step   10 | Loss: -0.0000 | LR: 2.76e-08 | Epoch: 0.00
+2025-07-02 16:24:27,401 - src.config.grpo_config - INFO - Performance:
+2025-07-02 16:24:27,401 - src.config.grpo_config - INFO -   Step time:      11.69s
+2025-07-02 16:24:27,401 - src.config.grpo_config - INFO -   Samples/sec:      0.3
+2025-07-02 16:24:27,401 - src.config.grpo_config - INFO -   GPU memory:     29.11GB (reserved:  30.30GB)
+2025-07-02 16:24:27,401 - src.config.grpo_config - INFO -   RAM usage:      14.17GB ( 47.5%)
+2025-07-02 16:24:27,401 - src.config.grpo_config - INFO -   CPU usage:      56.2%
+2025-07-02 16:25:25,906 - src.config.grpo_config - INFO - Step   15 | Loss: 0.0000 | LR: 6.21e-08 | Epoch: 0.00
+2025-07-02 16:25:25,906 - src.config.grpo_config - INFO - Performance:
+2025-07-02 16:25:25,907 - src.config.grpo_config - INFO -   Step time:      11.66s
+2025-07-02 16:25:25,907 - src.config.grpo_config - INFO -   Samples/sec:      0.3
+2025-07-02 16:25:25,907 - src.config.grpo_config - INFO -   GPU memory:     29.11GB (reserved:  30.30GB)
+2025-07-02 16:25:25,907 - src.config.grpo_config - INFO -   RAM usage:      14.18GB ( 47.6%)
+2025-07-02 16:25:25,907 - src.config.grpo_config - INFO -   CPU usage:      56.5%
+2025-07-02 16:26:24,491 - src.config.grpo_config - INFO - Step   20 | Loss: -0.0000 | LR: 9.66e-08 | Epoch: 0.00
+2025-07-02 16:26:24,492 - src.config.grpo_config - INFO - Performance:
+2025-07-02 16:26:24,492 - src.config.grpo_config - INFO -   Step time:      11.73s
+2025-07-02 16:26:24,492 - src.config.grpo_config - INFO -   Samples/sec:      0.3
+2025-07-02 16:26:24,492 - src.config.grpo_config - INFO -   GPU memory:     29.11GB (reserved:  30.30GB)
+2025-07-02 16:26:24,492 - src.config.grpo_config - INFO -   RAM usage:      14.18GB ( 47.5%)
+2025-07-02 16:26:24,492 - src.config.grpo_config - INFO -   CPU usage:      56.2%

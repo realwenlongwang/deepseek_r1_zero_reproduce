@@ -1,0 +1,433 @@
+"""
+GRPO configuration classes based on DeepSeek R1 tutorial.
+"""
+
+import logging
+from dataclasses import dataclass, field
+from typing import List, Optional
+from transformers import TrainingArguments, TrainerCallback, TrainerState, TrainerControl
+
+
+@dataclass
+class GRPOScriptArguments:
+    """
+    Script arguments for GRPO training, specifically related to reward functions.
+    """
+
+    reward_funcs: List[str] = field(
+        default_factory=lambda: ["accuracy", "format", "reasoning_steps", "cosine", "repetition_penalty"],
+        metadata={
+            "help": "List of reward functions. Possible values: 'accuracy', 'format', 'reasoning_steps', 'cosine', 'repetition_penalty'"
+        },
+    )
+    cosine_min_value_wrong: float = field(
+        default=-0.5,
+        metadata={"help": "Minimum reward for cosine scaling for wrong answers"},
+    )
+    cosine_max_value_wrong: float = field(
+        default=-0.1,
+        metadata={"help": "Maximum reward for cosine scaling for wrong answers"},
+    )
+    cosine_min_value_correct: float = field(
+        default=0.8,
+        metadata={"help": "Minimum reward for cosine scaling for correct answers"},
+    )
+    cosine_max_value_correct: float = field(
+        default=1.0,
+        metadata={"help": "Maximum reward for cosine scaling for correct answers"},
+    )
+    cosine_max_len: int = field(
+        default=1000,
+        metadata={"help": "Maximum length for cosine scaling"},
+    )
+
+    repetition_n_grams: int = field(
+        default=3,
+        metadata={"help": "Number of n-grams for repetition penalty reward"},
+    )
+    repetition_max_penalty: float = field(
+        default=-0.1,
+        metadata={"help": "Maximum (negative) penalty for for repetition penalty reward"},
+    )
+
+
+@dataclass
+class ModelConfig:
+    """
+    Configuration for the model following tutorial specifications.
+    """
+    model_name_or_path: str = field(
+        default="Qwen/Qwen2.5-7B-Instruct", 
+        metadata={"help": "Path to pretrained model or model identifier from huggingface.co/models"}
+    )
+    model_revision: Optional[str] = field(
+        default="main", 
+        metadata={"help": "The specific model version to use (can be a branch name, tag name or commit id)."}
+    )
+    torch_dtype: Optional[str] = field(
+        default="bfloat16", 
+        metadata={"help": "Override the default `torch_dtype` and load the model under this dtype."}
+    )
+    trust_remote_code: bool = field(
+        default=True, 
+        metadata={"help": "Trust remote code when loading model and tokenizer."}
+    )
+    attn_implementation: Optional[str] = field(
+        default="flash_attention_2", 
+        metadata={"help": "Attention implementation to use. 'flash_attention_2' or None"}
+    )
+
+
+def create_training_arguments(output_dir: str = "./grpo_output") -> TrainingArguments:
+    """
+    Create TrainingArguments following the exact tutorial configuration.
+    These are the exact parameters from the DeepSeek R1 tutorial.
+    """
+    return TrainingArguments(
+        output_dir=output_dir,              # Output directory for checkpoints and logs
+        overwrite_output_dir=True,
+        num_train_epochs=1,                 # Total number of training epochs
+        per_device_train_batch_size=8,      # Batch size per device during training
+        per_device_eval_batch_size=16,      # Batch size for evaluation
+        gradient_accumulation_steps=2,      # Accumulate gradients to simulate larger batch size
+        learning_rate=5e-5,                 # Initial learning rate for AdamW optimizer
+        warmup_ratio=0.1,                   # Linear warmup over warmup_ratio fraction of training steps
+        weight_decay=0.01,                  # Apply weight decay to all layers except bias and LayerNorm weights
+        logging_steps=10,                   # Log every X updates steps
+        eval_strategy="no",                 # Disable evaluation for now
+        eval_steps=50,                      # Evaluation and logging steps
+        save_strategy="steps",              # Save checkpoint every `save_steps`
+        save_steps=50,                      # Save checkpoint every X updates steps
+        save_total_limit=2,                 # Limit the total amount of checkpoints
+        dataloader_num_workers=2,           # Number of subprocesses to use for data loading
+        seed=42,                            # Random seed for reproducibility
+        bf16=True,                          # Use mixed precision BFP16 training
+        push_to_hub=False,                  # Whether to push the final model to Hugging Face Hub
+        gradient_checkpointing=True,        # Enable gradient checkpointing
+        report_to="none",                   # Reporting to no one
+        remove_unused_columns=False,        # Do not remove unused columns from the dataset
+    )
+
+
+def get_reward_functions(script_args: GRPOScriptArguments):
+    """
+    Returns a list of TRL-compatible reward functions based on the script arguments.
+    These functions work with TRL's GRPOTrainer interface.
+    """
+    from ..rewards.trl_reward_functions import get_reward_functions as get_trl_reward_functions
+    
+    # Create TRL-compatible reward functions
+    reward_functions = get_trl_reward_functions(script_args)
+    
+    return reward_functions
+
+
+import time
+import psutil
+import torch
+import numpy as np
+from collections import defaultdict
+import re
+
+logger = logging.getLogger(__name__)
+
+
+class ComprehensiveLoggingCallback(TrainerCallback):
+    """
+    Comprehensive callback for logging detailed GRPO training metrics.
+    Tracks reward breakdowns, generation quality, model performance, and more.
+    """
+    
+    def __init__(self, script_args: GRPOScriptArguments, log_examples: bool = True):
+        self.script_args = script_args
+        self.log_examples = log_examples
+        self.step_start_time = None
+        self.total_tokens_processed = 0
+        self.reward_history = defaultdict(list)
+        self.generation_stats = defaultdict(list)
+        
+    def on_step_begin(self, args: TrainingArguments, state: TrainerState, control: TrainerControl, **kwargs):
+        """Track step timing."""
+        self.step_start_time = time.time()
+    
+    def on_step_end(self, args: TrainingArguments, state: TrainerState, control: TrainerControl, **kwargs):
+        """Log comprehensive metrics at each step."""
+        if state.global_step % args.logging_steps == 0:
+            self._log_basic_metrics(args, state, **kwargs)
+            self._log_reward_metrics(**kwargs)
+            self._log_generation_quality(**kwargs)
+            self._log_performance_metrics(args, state, **kwargs)
+            
+            if self.log_examples and state.global_step % (args.logging_steps * 5) == 0:
+                self._log_generation_examples(**kwargs)
+    
+    def _log_basic_metrics(self, args: TrainingArguments, state: TrainerState, **kwargs):
+        """Log basic training metrics."""
+        if not state.log_history:
+            return
+            
+        latest_log = state.log_history[-1]
+        
+        # Basic metrics
+        loss = latest_log.get('loss', None)
+        lr = latest_log.get('learning_rate', None)
+        
+        # GRPO-specific losses
+        policy_loss = latest_log.get('policy_loss', None)
+        value_loss = latest_log.get('value_loss', None)
+        entropy_loss = latest_log.get('entropy_loss', None)
+        
+        logger.info(f"Step {state.global_step:4d} | "
+                   f"Loss: {loss:.4f} | "
+                   f"LR: {lr:.2e} | "
+                   f"Epoch: {state.epoch:.2f}")
+        
+        if policy_loss is not None:
+            logger.info(f"         GRPO | "
+                       f"Policy: {policy_loss:.4f} | "
+                       f"Value: {value_loss:.4f} | "
+                       f"Entropy: {entropy_loss:.4f}")
+    
+    def _log_reward_metrics(self, **kwargs):
+        """Log detailed reward function breakdown."""
+        # Extract reward information if available
+        rewards = kwargs.get('rewards', None)
+        if rewards is None:
+            return
+            
+        try:
+            # Calculate reward statistics
+            reward_stats = {}
+            for reward_name in self.script_args.reward_funcs:
+                if reward_name in rewards:
+                    values = rewards[reward_name]
+                    if isinstance(values, (list, np.ndarray)) and len(values) > 0:
+                        reward_stats[reward_name] = {
+                            'mean': np.mean(values),
+                            'std': np.std(values),
+                            'min': np.min(values),
+                            'max': np.max(values)
+                        }
+                        self.reward_history[reward_name].extend(values)
+            
+            if reward_stats:
+                logger.info("Reward Breakdown:")
+                for name, stats in reward_stats.items():
+                    logger.info(f"  {name:15s}: {stats['mean']:6.3f} ± {stats['std']:5.3f} "
+                               f"[{stats['min']:6.3f}, {stats['max']:6.3f}]")
+                
+                # Log total reward
+                if 'total' in rewards:
+                    total_values = rewards['total']
+                    if isinstance(total_values, (list, np.ndarray)) and len(total_values) > 0:
+                        total_mean = np.mean(total_values)
+                        logger.info(f"  {'total':15s}: {total_mean:6.3f} (combined)")
+                        
+        except Exception as e:
+            logger.warning(f"Error logging reward metrics: {e}")
+    
+    def _log_generation_quality(self, **kwargs):
+        """Log generation quality metrics."""
+        try:
+            completions = kwargs.get('completions', None)
+            if completions is None:
+                return
+                
+            # Analyze generation quality
+            format_compliance = 0
+            avg_length = 0
+            avg_think_length = 0
+            avg_answer_length = 0
+            reasoning_indicators = 0
+            
+            for completion in completions:
+                if isinstance(completion, list) and len(completion) > 0:
+                    content = completion[0].get('content', '')
+                elif isinstance(completion, dict):
+                    content = completion.get('content', '')
+                else:
+                    content = str(completion)
+                
+                # Check format compliance
+                think_match = re.search(r'<think>(.*?)</think>', content, re.DOTALL | re.IGNORECASE)
+                answer_match = re.search(r'<answer>(.*?)</answer>', content, re.DOTALL | re.IGNORECASE)
+                
+                if think_match and answer_match:
+                    format_compliance += 1
+                    think_content = think_match.group(1).strip()
+                    answer_content = answer_match.group(1).strip()
+                    avg_think_length += len(think_content)
+                    avg_answer_length += len(answer_content)
+                    
+                    # Count reasoning indicators
+                    reasoning_patterns = [
+                        r'step \d+', r'first[,\s]', r'second[,\s]', r'next[,\s]',
+                        r'\d+\.', r'therefore', r'because', r'since'
+                    ]
+                    for pattern in reasoning_patterns:
+                        reasoning_indicators += len(re.findall(pattern, think_content, re.IGNORECASE))
+                
+                avg_length += len(content)
+            
+            n_completions = len(completions)
+            if n_completions > 0:
+                format_rate = format_compliance / n_completions * 100
+                avg_length /= n_completions
+                avg_think_length = avg_think_length / max(format_compliance, 1)
+                avg_answer_length = avg_answer_length / max(format_compliance, 1)
+                reasoning_per_response = reasoning_indicators / max(format_compliance, 1)
+                
+                logger.info(f"Generation Quality:")
+                logger.info(f"  Format compliance: {format_rate:5.1f}% "
+                           f"({format_compliance}/{n_completions})")
+                logger.info(f"  Avg response length: {avg_length:6.1f} chars")
+                logger.info(f"  Avg think length:    {avg_think_length:6.1f} chars")
+                logger.info(f"  Avg answer length:   {avg_answer_length:6.1f} chars")
+                logger.info(f"  Reasoning indicators: {reasoning_per_response:5.2f} per response")
+                
+                # Store stats for trend analysis
+                self.generation_stats['format_rate'].append(format_rate)
+                self.generation_stats['avg_length'].append(avg_length)
+                self.generation_stats['reasoning_indicators'].append(reasoning_per_response)
+                
+        except Exception as e:
+            logger.warning(f"Error logging generation quality: {e}")
+    
+    def _log_performance_metrics(self, args: TrainingArguments, state: TrainerState, **kwargs):
+        """Log training performance metrics."""
+        try:
+            # Calculate step timing
+            step_time = time.time() - self.step_start_time if self.step_start_time else 0
+            
+            # Memory usage
+            if torch.cuda.is_available():
+                gpu_memory = torch.cuda.max_memory_allocated() / 1024**3  # GB
+                gpu_reserved = torch.cuda.max_memory_reserved() / 1024**3  # GB
+            else:
+                gpu_memory = gpu_reserved = 0
+            
+            # CPU and system metrics
+            cpu_percent = psutil.cpu_percent()
+            memory_info = psutil.virtual_memory()
+            ram_usage = memory_info.used / 1024**3  # GB
+            
+            # Training speed estimates
+            samples_per_sec = args.per_device_train_batch_size / max(step_time, 0.001)
+            
+            logger.info(f"Performance:")
+            logger.info(f"  Step time:     {step_time:6.2f}s")
+            logger.info(f"  Samples/sec:   {samples_per_sec:6.1f}")
+            logger.info(f"  GPU memory:    {gpu_memory:6.2f}GB (reserved: {gpu_reserved:6.2f}GB)")
+            logger.info(f"  RAM usage:     {ram_usage:6.2f}GB ({memory_info.percent:5.1f}%)")
+            logger.info(f"  CPU usage:     {cpu_percent:5.1f}%")
+            
+        except Exception as e:
+            logger.warning(f"Error logging performance metrics: {e}")
+    
+    def _log_generation_examples(self, **kwargs):
+        """Log examples of model generations for qualitative analysis."""
+        try:
+            completions = kwargs.get('completions', None)
+            rewards = kwargs.get('rewards', None)
+            
+            if completions is None or rewards is None:
+                return
+                
+            logger.info("="*80)
+            logger.info("GENERATION EXAMPLES")
+            logger.info("="*80)
+            
+            # Find best and worst examples based on total reward
+            if 'total' in rewards:
+                total_rewards = rewards['total']
+                if len(total_rewards) > 0:
+                    best_idx = np.argmax(total_rewards)
+                    worst_idx = np.argmin(total_rewards)
+                    
+                    self._log_single_example(completions[best_idx], rewards, best_idx, "BEST")
+                    logger.info("-" * 40)
+                    self._log_single_example(completions[worst_idx], rewards, worst_idx, "WORST")
+            
+            logger.info("="*80)
+            
+        except Exception as e:
+            logger.warning(f"Error logging generation examples: {e}")
+    
+    def _log_single_example(self, completion, rewards, idx, label):
+        """Log a single generation example with reward breakdown."""
+        if isinstance(completion, list) and len(completion) > 0:
+            content = completion[0].get('content', '')
+        elif isinstance(completion, dict):
+            content = completion.get('content', '')
+        else:
+            content = str(completion)
+        
+        logger.info(f"{label} EXAMPLE (idx {idx}):")
+        logger.info(f"Content: {content[:200]}{'...' if len(content) > 200 else ''}")
+        
+        # Log reward breakdown for this example
+        logger.info("Reward breakdown:")
+        for reward_name in self.script_args.reward_funcs:
+            if reward_name in rewards:
+                reward_value = rewards[reward_name][idx] if idx < len(rewards[reward_name]) else 0
+                logger.info(f"  {reward_name}: {reward_value:.3f}")
+        
+        if 'total' in rewards and idx < len(rewards['total']):
+            logger.info(f"  total: {rewards['total'][idx]:.3f}")
+
+
+class RewardTrendCallback(TrainerCallback):
+    """
+    Callback for tracking reward trends and detecting training issues.
+    """
+    
+    def __init__(self, window_size: int = 50):
+        self.window_size = window_size
+        self.reward_history = defaultdict(list)
+        self.step_count = 0
+    
+    def on_step_end(self, args: TrainingArguments, state: TrainerState, control: TrainerControl, **kwargs):
+        """Track reward trends and detect issues."""
+        self.step_count += 1
+        
+        rewards = kwargs.get('rewards', None)
+        if rewards is None:
+            return
+            
+        # Store reward history
+        for reward_name, values in rewards.items():
+            if isinstance(values, (list, np.ndarray)) and len(values) > 0:
+                mean_reward = np.mean(values)
+                self.reward_history[reward_name].append(mean_reward)
+        
+        # Check for trends every window_size steps
+        if self.step_count % self.window_size == 0:
+            self._analyze_trends(state.global_step)
+    
+    def _analyze_trends(self, step):
+        """Analyze reward trends and log warnings if needed."""
+        for reward_name, history in self.reward_history.items():
+            if len(history) >= self.window_size:
+                recent = history[-self.window_size:]
+                older = history[-2*self.window_size:-self.window_size] if len(history) >= 2*self.window_size else history[:-self.window_size]
+                
+                if len(older) > 0:
+                    recent_mean = np.mean(recent)
+                    older_mean = np.mean(older)
+                    change = (recent_mean - older_mean) / abs(older_mean + 1e-8) * 100
+                    
+                    if abs(change) > 10:  # Significant change threshold
+                        direction = "↗️" if change > 0 else "↘️"
+                        logger.info(f"Trend Alert Step {step}: {reward_name} {direction} {change:+.1f}% "
+                                   f"({older_mean:.3f} → {recent_mean:.3f})")
+
+
+def get_callbacks(training_args: TrainingArguments, model_args: ModelConfig, script_args: GRPOScriptArguments):
+    """
+    Returns a list of comprehensive callbacks for GRPO training monitoring.
+    """
+    callbacks = [
+        ComprehensiveLoggingCallback(script_args, log_examples=True),
+        RewardTrendCallback(window_size=50)
+    ]
+    return callbacks

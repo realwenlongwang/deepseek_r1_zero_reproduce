@@ -1,0 +1,29 @@
+[project]
+name = "deepseek-r1-zero-repro"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "accelerate>=0.24.0",
+    "bitsandbytes>=0.41.0",
+    "datasets>=2.14.0",
+    "deepspeed>=0.12.0",
+    "flash-attn>=2.3.0",
+    "latex2sympy2>=1.9.1",
+    "math-verify>=0.1.0",
+    "numpy>=1.21.0",
+    "peft>=0.6.0",
+    "psutil>=5.8.0",
+    "pytest>=7.0.0",
+    "safetensors>=0.4.0",
+    "scikit-learn>=1.0.0",
+    "scipy>=1.7.0",
+    "tensorboard>=2.14.0",
+    "tokenizers>=0.15.0",
+    "torch>=2.0.0",
+    "tqdm>=4.64.0",
+    "transformers>=4.35.0",
+    "trl>=0.7.0",
+    "wandb>=0.16.0",
+]
