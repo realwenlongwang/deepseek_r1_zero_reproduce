@@ -10,6 +10,8 @@ import argparse
 import logging
 import warnings
 warnings.filterwarnings("ignore")
+# Suppress specific Qwen2 gradient checkpointing warning
+warnings.filterwarnings("ignore", message=".*Caching is incompatible with gradient checkpointing.*")
 
 # Add src to path for imports
 sys.path.append(os.path.join(os.path.dirname(__file__), 'src'))
@@ -33,6 +35,7 @@ from src.config.grpo_config import (
     GRPOScriptArguments,
     ModelConfig,
     create_training_arguments,
+    create_grpo_config,
     get_reward_functions,
     get_callbacks
 )
@@ -76,10 +79,10 @@ def parse_args():
                        help="Output directory")
     parser.add_argument("--num_train_epochs", type=float, default=1,
                        help="Number of training epochs")
-    parser.add_argument("--per_device_train_batch_size", type=int, default=8,
-                       help="Train batch size per device")
-    parser.add_argument("--gradient_accumulation_steps", type=int, default=2,
-                       help="Gradient accumulation steps")
+    parser.add_argument("--per_device_train_batch_size", type=int, default=16,
+                       help="Train batch size per device (optimized for L40S)")
+    parser.add_argument("--gradient_accumulation_steps", type=int, default=1,
+                       help="Gradient accumulation steps (reduced for larger batch)")
     parser.add_argument("--learning_rate", type=float, default=5e-5,
                        help="Learning rate")
     parser.add_argument("--logging_steps", type=int, default=10,
@@ -88,6 +91,12 @@ def parse_args():
                        help="Evaluation frequency")
     parser.add_argument("--save_steps", type=int, default=50,
                        help="Save frequency")
+    parser.add_argument("--max_completion_length", type=int, default=512,
+                       help="Maximum completion length (increased to fix truncation)")
+    parser.add_argument("--generation_batch_size", type=int, default=32,
+                       help="Batch size for generation phase")
+    parser.add_argument("--dataloader_num_workers", type=int, default=8,
+                       help="Number of dataloader workers (increased for performance)")
     
     # Reward function arguments
     parser.add_argument("--reward_funcs", nargs="+", 
@@ -172,21 +181,15 @@ def setup_datasets(dataset_name: str, dataset_subset: str = None):
     return train_dataset
 
 
-def create_grpo_trainer(model, tokenizer, reward_functions, training_args, train_dataset, eval_dataset, callbacks):
+def create_grpo_trainer(model, tokenizer, reward_functions, training_args, train_dataset, eval_dataset, callbacks, max_completion_length=512, generation_batch_size=32):
     """
-    Create a real GRPOTrainer following the tutorial specifications.
-    This replaces the mock implementation with actual GRPO training.
+    Create a real GRPOTrainer with optimized configuration for better performance.
+    Enhanced from tutorial specifications for L40S GPU.
     """
-    logger.info("Creating real GRPOTrainer following tutorial specifications...")
+    logger.info("Creating optimized GRPOTrainer with performance enhancements...")
     
-    # Create GRPOConfig from TrainingArguments (exactly as in tutorial)
-    grpo_config = GRPOConfig(
-        **training_args.to_dict(),  # Convert TrainingArguments to dictionary and unpack
-        **{
-            # REMOVED model_init_kwargs here 
-            # We are passing the instantiated 'model' object, so GRPOTrainer doesn't need model_init_kwargs
-        }
-    )
+    # Create optimized GRPOConfig with performance enhancements
+    grpo_config = create_grpo_config(training_args, max_completion_length, generation_batch_size)
     
     # Create GRPOTrainer (exactly as in tutorial)
     grpo_trainer = GRPOTrainer(
@@ -246,6 +249,7 @@ def main():
     training_args.logging_steps = args.logging_steps
     training_args.eval_steps = args.eval_steps
     training_args.save_steps = args.save_steps
+    training_args.dataloader_num_workers = args.dataloader_num_workers
     
     if not args.no_wandb:
         training_args.report_to = "wandb"
@@ -294,7 +298,7 @@ def main():
         callbacks = get_callbacks(training_args, model_args, script_args)
         logger.info(f"Initialized {len(callbacks)} comprehensive callbacks")
         
-        # Create real GRPO trainer (following tutorial exactly)
+        # Create real GRPO trainer with optimized configuration
         grpo_trainer = create_grpo_trainer(
             model=model,
             tokenizer=tokenizer,
@@ -302,7 +306,9 @@ def main():
             training_args=training_args,
             train_dataset=train_dataset,
             eval_dataset=eval_dataset,
-            callbacks=callbacks
+            callbacks=callbacks,
+            max_completion_length=args.max_completion_length,
+            generation_batch_size=args.generation_batch_size
         )
         
         # Start the GRPO Training Loop (exactly as in tutorial)

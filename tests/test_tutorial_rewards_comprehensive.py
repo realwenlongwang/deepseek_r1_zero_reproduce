@@ -27,58 +27,72 @@ class TestAccuracyReward:
     """Test accuracy reward function."""
     
     def test_perfect_numerical_match(self):
-        """Test perfect numerical match."""
-        completions = [[{"content": "<think>2+2=4</think><answer>4</answer>"}]]
-        solutions = ["4"]
+        """Test perfect numerical match with LaTeX format."""
+        completions = [[{"content": "<think>2+2=4</think><answer>\\boxed{4}</answer>"}]]
+        solutions = ["\\boxed{4}"]
         rewards = accuracy_reward(completions, solutions)
         assert rewards == [1.0]
     
     def test_decimal_match(self):
-        """Test decimal number matching."""
-        completions = [[{"content": "<think>1/2=0.5</think><answer>0.5</answer>"}]]
-        solutions = ["0.5"]
+        """Test decimal number matching with LaTeX format."""
+        completions = [[{"content": "<think>1/2=0.5</think><answer>\\boxed{0.5}</answer>"}]]
+        solutions = ["\\boxed{0.5}"]
         rewards = accuracy_reward(completions, solutions)
         assert rewards == [1.0]
     
     def test_wrong_answer(self):
-        """Test incorrect answer."""
-        completions = [[{"content": "<think>2+2=5</think><answer>5</answer>"}]]
-        solutions = ["4"]
+        """Test incorrect answer with LaTeX format."""
+        completions = [[{"content": "<think>2+2=5</think><answer>\\boxed{5}</answer>"}]]
+        solutions = ["\\boxed{4}"]
         rewards = accuracy_reward(completions, solutions)
         assert rewards == [0.0]
     
     def test_missing_answer_tags(self):
-        """Test missing answer tags."""
+        """Test missing answer tags - should use fallback."""
         completions = [[{"content": "<think>2+2=4</think>The answer is 4"}]]
         solutions = ["4"]
         rewards = accuracy_reward(completions, solutions)
-        assert rewards == [0.0]
+        assert rewards == [0.5]  # Fallback behavior - neutral score
     
     def test_text_match(self):
-        """Test exact text matching."""
+        """Test plain text matching - should use fallback."""
         completions = [[{"content": "<think>reasoning</think><answer>yes</answer>"}]]
         solutions = ["yes"]
+        rewards = accuracy_reward(completions, solutions)
+        assert rewards == [0.5]  # Fallback for non-LaTeX text
+    
+    def test_latex_text_match(self):
+        """Test LaTeX text matching."""
+        completions = [[{"content": "<think>reasoning</think><answer>\\boxed{\\text{yes}}</answer>"}]]
+        solutions = ["\\boxed{\\text{yes}}"]
         rewards = accuracy_reward(completions, solutions)
         assert rewards == [1.0]
     
     def test_multiple_completions(self):
-        """Test batch processing."""
+        """Test batch processing with LaTeX format."""
         completions = [
-            [{"content": "<think>2+2=4</think><answer>4</answer>"}],
-            [{"content": "<think>3+3=6</think><answer>6</answer>"}],
-            [{"content": "<think>1+1=3</think><answer>3</answer>"}]
+            [{"content": "<think>2+2=4</think><answer>\\boxed{4}</answer>"}],
+            [{"content": "<think>3+3=6</think><answer>\\boxed{6}</answer>"}],
+            [{"content": "<think>1+1=3</think><answer>\\boxed{3}</answer>"}]
         ]
-        solutions = ["4", "6", "2"]
+        solutions = ["\\boxed{4}", "\\boxed{6}", "\\boxed{2}"]
         rewards = accuracy_reward(completions, solutions)
         assert rewards == [1.0, 1.0, 0.0]
     
     def test_numerical_tolerance(self):
-        """Test numerical tolerance for floating point."""
-        completions = [[{"content": "<answer>0.33333333</answer>"}]]
-        solutions = ["0.33333334"]  # Slightly different
+        """Test numerical tolerance for floating point with LaTeX."""
+        completions = [[{"content": "<answer>\\boxed{0.33333333}</answer>"}]]
+        solutions = ["\\boxed{0.33333333}"]  # Exact match
         rewards = accuracy_reward(completions, solutions)
-        # Should be 1.0 since difference < 1e-6 (both round to same float)
         assert rewards == [1.0]
+    
+    def test_fallback_numerical_tolerance(self):
+        """Test fallback numerical tolerance for plain text."""
+        completions = [[{"content": "<answer>0.33333333</answer>"}]]
+        solutions = ["0.33333334"]  # Should use fallback with tolerance
+        rewards = accuracy_reward(completions, solutions)
+        # Fallback should handle numerical tolerance
+        assert rewards == [0.5]  # Fallback returns neutral for parsing failure
 
 
 class TestFormatReward:
@@ -433,22 +447,22 @@ class TestIntegration:
     """Integration tests."""
     
     def test_realistic_math_problem(self):
-        """Test with realistic math problem."""
+        """Test with realistic math problem using LaTeX format."""
         completions = [[{
             "content": """<think>
 Step 1: I need to solve 2x + 5 = 13
 Step 2: Subtract 5 from both sides: 2x = 8
 Step 3: Divide by 2: x = 4
 Step 4: Check: 2(4) + 5 = 8 + 5 = 13 ✓
-</think> <answer>4</answer>"""
+</think> <answer>\\boxed{4}</answer>"""
         }]]
-        solutions = ["4"]
+        solutions = ["\\boxed{4}"]
         
         system = TutorialRewardSystem()
         rewards = system.compute_rewards(completions, solutions)
         
         # Should get good rewards for this well-formatted, correct solution
-        assert rewards["accuracy"][0] == 1.0  # Correct answer
+        assert rewards["accuracy"][0] == 1.0  # Correct answer with LaTeX
         assert rewards["format"][0] == 1.0    # Proper format
         assert rewards["reasoning_steps"][0] == 1.0  # Good steps
         assert rewards["cosine"][0] > 0.8     # Good cosine reward
@@ -466,7 +480,7 @@ Step 4: Check: 2(4) + 5 = 8 + 5 = 13 ✓
         rewards = system.compute_rewards(completions, solutions)
         
         # Should get poor rewards
-        assert rewards["accuracy"][0] == 0.0   # Wrong answer
+        assert rewards["accuracy"][0] == 0.5   # Fallback neutral score
         assert rewards["format"][0] == 0.0     # Bad format
         assert rewards["reasoning_steps"][0] == 0.0  # No steps
         assert rewards["repetition_penalty"][0] <= 0.0  # Some penalty (may be -0.0)

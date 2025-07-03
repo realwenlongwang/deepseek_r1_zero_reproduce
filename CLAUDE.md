@@ -97,9 +97,27 @@ Final answer here
 ## Common Issues and Solutions
 
 ### Memory Issues
-- Switch to 0.5B model: `--model_name "./models/Qwen2.5-0.5B"`
-- Reduce batch size: `--per_device_train_batch_size 2`
-- Enable gradient checkpointing (already enabled in config)
+
+**GPU Memory Requirements:**
+- **Qwen2.5-0.5B**: ~12-15GB (recommended for development)
+- **Qwen2.5-3B**: ~38-42GB (requires high-end GPU)
+- **Qwen2.5-7B**: ~60-70GB (requires multiple GPUs or A100)
+
+**If you encounter GPU memory issues, try these solutions in order:**
+
+1. **Enable gradient checkpointing**: Set `gradient_checkpointing=True` in `src/config/grpo_config.py`
+   - Trades computation for memory (saves ~2-4GB)
+   - May show "Caching is incompatible with gradient checkpointing" warning (this is normal)
+
+2. **Reduce batch size**: `--per_device_train_batch_size 4` or `--per_device_train_batch_size 2`
+   - Effective batch size must be divisible by 8 for GRPO
+
+3. **Switch to smaller model**: `--model_name "./models/Qwen2.5-0.5B"`
+   - Much lower memory requirements while maintaining training functionality
+
+4. **Use DeepSpeed ZeRO**: Enable DeepSpeed for memory optimization (advanced)
+
+**Current default**: `gradient_checkpointing=False` for better performance when sufficient memory is available.
 
 ### Import/Dependency Issues
 - The project uses fallback implementations for `latex2sympy2` and `math_verify`

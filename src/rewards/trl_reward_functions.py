@@ -13,8 +13,8 @@ from .tutorial_rewards import (
 )
 
 
-def create_trl_wrapper(tutorial_func, need_solutions=False):
-    """Create a TRL-compatible wrapper for tutorial reward functions."""
+def create_trl_wrapper(tutorial_func, need_solutions=False, wrapper_name=None):
+    """Create a TRL-compatible wrapper for tutorial reward functions with intuitive naming."""
     def trl_wrapper(*args, **kwargs):
         """TRL-compatible wrapper function."""
         # Handle flexible argument patterns from TRL
@@ -57,11 +57,15 @@ def create_trl_wrapper(tutorial_func, need_solutions=False):
             # For format, reasoning, and repetition functions
             return tutorial_func(formatted_completions)
     
+    # Set intuitive function name for WandB metrics
+    if wrapper_name:
+        trl_wrapper.__name__ = wrapper_name
+    
     return trl_wrapper
 
 
 def create_cosine_wrapper(script_args):
-    """Create TRL-compatible cosine reward wrapper."""
+    """Create TRL-compatible cosine reward wrapper with intuitive naming."""
     cosine_func = get_cosine_scaled_reward(
         min_value_wrong=script_args.cosine_min_value_wrong,
         max_value_wrong=script_args.cosine_max_value_wrong,
@@ -70,8 +74,8 @@ def create_cosine_wrapper(script_args):
         max_len=script_args.cosine_max_len,
     )
     
-    def trl_cosine_wrapper(*args, **kwargs):
-        """TRL-compatible cosine wrapper."""
+    def cosine_length_reward(*args, **kwargs):
+        """TRL-compatible cosine length scaling reward."""
         # Handle flexible argument patterns from TRL
         if len(args) >= 3:
             inputs, prompts, completions = args[:3]
@@ -103,18 +107,21 @@ def create_cosine_wrapper(script_args):
         
         return cosine_func(formatted_completions, solutions, accuracy_rewards)
     
-    return trl_cosine_wrapper
+    # Set intuitive name for WandB metrics
+    cosine_length_reward.__name__ = "cosine_length_reward"
+    
+    return cosine_length_reward
 
 
 def create_repetition_wrapper(script_args):
-    """Create TRL-compatible repetition penalty wrapper."""
+    """Create TRL-compatible repetition penalty wrapper with intuitive naming."""
     repetition_func = get_repetition_penalty_reward(
         ngram_size=script_args.repetition_n_grams,
         max_penalty=script_args.repetition_max_penalty,
     )
     
-    def trl_repetition_wrapper(*args, **kwargs):
-        """TRL-compatible repetition wrapper."""
+    def repetition_penalty_reward(*args, **kwargs):
+        """TRL-compatible repetition penalty reward."""
         # Handle flexible argument patterns from TRL
         if len(args) >= 3:
             inputs, prompts, completions = args[:3]
@@ -142,24 +149,39 @@ def create_repetition_wrapper(script_args):
         
         return repetition_func(formatted_completions)
     
-    return trl_repetition_wrapper
+    # Set intuitive name for WandB metrics
+    repetition_penalty_reward.__name__ = "repetition_penalty_reward"
+    
+    return repetition_penalty_reward
 
 
 # Utility function to get reward functions based on script arguments
 def get_reward_functions(script_args):
     """
-    Returns a list of TRL-compatible reward functions based on the script arguments.
+    Returns a list of TRL-compatible reward functions with intuitive names for WandB metrics.
     """
     reward_funcs_list = []
     
     for func_name in script_args.reward_funcs:
         if func_name == "accuracy":
             # Accuracy function needs solutions but we use empty ones
-            reward_funcs_list.append(create_trl_wrapper(accuracy_reward, need_solutions=True))
+            reward_funcs_list.append(create_trl_wrapper(
+                accuracy_reward, 
+                need_solutions=True, 
+                wrapper_name="accuracy_reward"
+            ))
         elif func_name == "format":
-            reward_funcs_list.append(create_trl_wrapper(format_reward, need_solutions=False))
+            reward_funcs_list.append(create_trl_wrapper(
+                format_reward, 
+                need_solutions=False, 
+                wrapper_name="format_reward"
+            ))
         elif func_name == "reasoning_steps":
-            reward_funcs_list.append(create_trl_wrapper(reasoning_steps_reward, need_solutions=False))
+            reward_funcs_list.append(create_trl_wrapper(
+                reasoning_steps_reward, 
+                need_solutions=False, 
+                wrapper_name="reasoning_steps_reward"
+            ))
         elif func_name == "cosine":
             reward_funcs_list.append(create_cosine_wrapper(script_args))
         elif func_name == "repetition_penalty":

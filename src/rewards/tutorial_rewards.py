@@ -8,29 +8,10 @@ import math
 from typing import List, Dict, Any, Callable
 from collections import Counter
 
-# Try to import latex2sympy2 and math_verify, provide fallbacks if not available
-try:
-    from latex2sympy2 import parse, LatexExtractionConfig, NormalizationConfig
-    from math_verify import verify
-    LATEX_PARSING_AVAILABLE = True
-except ImportError:
-    print("Warning: latex2sympy2 or math_verify not available. Using fallback implementation.")
-    LATEX_PARSING_AVAILABLE = False
-    
-    # Fallback implementations
-    def parse(*args, **kwargs):
-        return None
-    
-    def verify(answer, gold):
-        return False
-    
-    class LatexExtractionConfig:
-        def __init__(self, **kwargs):
-            pass
-    
-    class NormalizationConfig:
-        def __init__(self, **kwargs):
-            pass
+# Import math-related utilities
+from latex2sympy2_extended import NormalizationConfig
+from math_verify import LatexExtractionConfig, parse, verify
+LATEX_PARSING_AVAILABLE = True
 
 
 def accuracy_reward(completions, solutions, **kwargs):
@@ -47,28 +28,23 @@ def accuracy_reward(completions, solutions, **kwargs):
     for content, sol in zip(contents, solutions):
         if LATEX_PARSING_AVAILABLE:
             # Parse the ground truth solution
-            gold_parsed = parse(sol, extraction_mode="first_match", 
-                                extraction_config=[LatexExtractionConfig()])
+            gold_parsed = parse(sol, 
+                               extraction_config=[LatexExtractionConfig()],
+                               fallback_mode="first_match")
             
             if gold_parsed:  # Check if parsing was successful
-                # Parse the model's answer with relaxed normalization
+                # Extract answer from <answer> tags
+                answer_match = re.search(r'<answer>(.*?)</answer>', content, re.DOTALL | re.IGNORECASE)
+                if answer_match:
+                    answer_text = answer_match.group(1).strip()
+                else:
+                    answer_text = content  # Fallback to full content
+                
+                # Parse the model's answer
                 answer_parsed = parse(
-                    content,
-                    extraction_config=[
-                        LatexExtractionConfig(
-                            normalization_config=NormalizationConfig(
-                                nits=False,
-                                malformed_operators=False,
-                                basic_latex=True,
-                                equations=True,
-                                boxed="all",
-                                units=True,
-                            ),
-                            boxed_match_priority=0,
-                            try_extract_without_anchor=False,
-                        )
-                    ],
-                    extraction_mode="first_match",
+                    answer_text,
+                    extraction_config=[LatexExtractionConfig()],
+                    fallback_mode="first_match",
                 )
 
                 # Reward 1.0 if correct, 0.0 if incorrect
@@ -76,7 +52,7 @@ def accuracy_reward(completions, solutions, **kwargs):
             else:
                 # If ground truth cannot be parsed, assign neutral reward (0.5)
                 reward = 0.5
-                print("Warning: Failed to parse gold solution:", sol)
+                # Note: LaTeX parsing failed, using fallback scoring
         else:
             # Fallback: simple text/numerical comparison
             reward = _fallback_accuracy_check(content, sol)

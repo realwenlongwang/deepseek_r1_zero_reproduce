@@ -80,16 +80,16 @@ class ModelConfig:
 
 def create_training_arguments(output_dir: str = "./grpo_output") -> TrainingArguments:
     """
-    Create TrainingArguments following the exact tutorial configuration.
-    These are the exact parameters from the DeepSeek R1 tutorial.
+    Create TrainingArguments optimized for maximum GPU utilization and performance.
+    Enhanced from tutorial configuration for L40S GPU with Ada architecture.
     """
     return TrainingArguments(
         output_dir=output_dir,              # Output directory for checkpoints and logs
         overwrite_output_dir=True,
         num_train_epochs=1,                 # Total number of training epochs
-        per_device_train_batch_size=8,      # Batch size per device during training
-        per_device_eval_batch_size=16,      # Batch size for evaluation
-        gradient_accumulation_steps=2,      # Accumulate gradients to simulate larger batch size
+        per_device_train_batch_size=16,     # INCREASED: Better GPU utilization (16*1=16, divisible by 8)
+        per_device_eval_batch_size=32,      # INCREASED: Larger eval batch size
+        gradient_accumulation_steps=1,      # REDUCED: Less accumulation with larger batch
         learning_rate=5e-5,                 # Initial learning rate for AdamW optimizer
         warmup_ratio=0.1,                   # Linear warmup over warmup_ratio fraction of training steps
         weight_decay=0.01,                  # Apply weight decay to all layers except bias and LayerNorm weights
@@ -99,14 +99,39 @@ def create_training_arguments(output_dir: str = "./grpo_output") -> TrainingArgu
         save_strategy="steps",              # Save checkpoint every `save_steps`
         save_steps=50,                      # Save checkpoint every X updates steps
         save_total_limit=2,                 # Limit the total amount of checkpoints
-        dataloader_num_workers=2,           # Number of subprocesses to use for data loading
+        dataloader_num_workers=4,           # OPTIMAL: Match CPU core count for best performance
+        dataloader_pin_memory=True,         # ENABLED: Faster CPU->GPU transfer
+        dataloader_persistent_workers=True, # ENABLED: Keep workers alive between epochs
+        dataloader_prefetch_factor=4,       # ADDED: Prefetch more batches for smoother training
+        dataloader_drop_last=True,          # ENABLED: Consistent batch sizes for stable timing
         seed=42,                            # Random seed for reproducibility
         bf16=True,                          # Use mixed precision BFP16 training
+        tf32=True,                          # ENABLED: Use TF32 for Ada architecture speedup
         push_to_hub=False,                  # Whether to push the final model to Hugging Face Hub
-        gradient_checkpointing=True,        # Enable gradient checkpointing
+        gradient_checkpointing=False,       # Disabled for speed (we have abundant GPU memory)
         report_to="none",                   # Reporting to no one
         remove_unused_columns=False,        # Do not remove unused columns from the dataset
+        group_by_length=True,               # ENABLED: Group similar lengths for less padding
     )
+
+
+def create_grpo_config(training_args, max_completion_length=512, generation_batch_size=32) -> 'GRPOConfig':
+    """
+    Create GRPOConfig with optimized parameters for better performance.
+    """
+    from trl import GRPOConfig
+    
+    # Create GRPOConfig from TrainingArguments with performance optimizations
+    grpo_config = GRPOConfig(
+        **training_args.to_dict(),
+        # GRPO-specific optimizations for better GPU utilization
+        max_completion_length=max_completion_length,    # Configurable completion length
+        generation_batch_size=generation_batch_size,    # Configurable generation batch size
+        # Note: Cannot set both generation_batch_size and steps_per_generation
+        num_generations=8,                              # Standard GRPO setting
+    )
+    
+    return grpo_config
 
 
 def get_reward_functions(script_args: GRPOScriptArguments):

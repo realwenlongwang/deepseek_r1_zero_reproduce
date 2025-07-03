@@ -9,3 +9,5 @@ wheels/
 # Virtual environments
 .venv
 models/
+wandb/
+grpo_output/
