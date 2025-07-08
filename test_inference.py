@@ -42,11 +42,17 @@ def load_checkpoint(checkpoint_path):
         trust_remote_code=True
     )
     
-    # Load model
+    # Load model with consistent device placement
+    # Use single GPU for inference to avoid device mismatch issues
+    device_map = None
+    if torch.cuda.is_available():
+        device_map = "cuda:0"  # Force entire model on single GPU for inference
+        print("Using single GPU (cuda:0) for inference - avoids device mismatch")
+    
     model = AutoModelForCausalLM.from_pretrained(
         checkpoint_path,
         torch_dtype=torch.bfloat16,
-        device_map="auto" if torch.cuda.is_available() else None,
+        device_map=device_map,
         local_files_only=True,
         trust_remote_code=True
     )

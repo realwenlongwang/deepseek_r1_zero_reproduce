@@ -18,21 +18,20 @@ This implementation follows the exact specifications from the [DeepSeek R1 train
 
 ### 1. Setup Environment
 ```bash
-# Create virtual environment
-python -m venv venv
-source venv/bin/activate  # On Windows: venv\Scripts\activate
+# Install dependencies using UV package manager
+uv sync
 
-# Install dependencies
-pip install -r requirements.txt
+# Note: Flash Attention may need to be installed separately first
+uv pip install "flash-attn>=2.3.0"
 ```
 
 ### 2. Run GRPO Training
 ```bash
 # Basic training with comprehensive logging
-python train_grpo.py --no_wandb --reward_funcs accuracy format reasoning_steps
+uv run train_grpo.py --no_wandb --reward_funcs accuracy format reasoning_steps
 
 # Full training with all reward functions
-python train_grpo.py \
+uv run train_grpo.py \
     --model_name "Qwen/Qwen2.5-7B-Instruct" \
     --dataset_name "AI-MO/NuminaMath-TIR" \
     --reward_funcs accuracy format reasoning_steps cosine repetition_penalty \
@@ -186,9 +185,9 @@ Run comprehensive tests to verify the implementation:
 
 ```bash
 # Test all components
-python tests/test_callbacks.py
-python tests/test_tutorial_rewards.py
-python tests/test_config_integration.py
+uv run python tests/test_callbacks.py
+uv run python tests/test_tutorial_rewards.py
+uv run python tests/test_config_integration.py
 
 # Expected output: All tests should pass ✅
 ```
@@ -208,7 +207,7 @@ def custom_reward(completion, ground_truth=None):
 ### Integration with Weights & Biases
 ```bash
 # Enable W&B logging
-python train_grpo.py \
+uv run train_grpo.py \
     --wandb_project "my-deepseek-r1" \
     --wandb_run_name "experiment-1"
 ```
@@ -216,7 +215,7 @@ python train_grpo.py \
 ### Memory Optimization
 ```bash
 # For limited GPU memory
-python train_grpo.py \
+uv run train_grpo.py \
     --per_device_train_batch_size 4 \
     --gradient_accumulation_steps 4 \
     --torch_dtype "bfloat16"

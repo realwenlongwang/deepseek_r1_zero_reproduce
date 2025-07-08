@@ -42,6 +42,25 @@ huggingface-cli download Qwen/Qwen2.5-0.5B --local-dir ./models/Qwen2.5-0.5B
 huggingface-cli download Qwen/Qwen2.5-7B-Instruct --local-dir ./models/Qwen2.5-7B-Instruct
 ```
 
+### Checkpoint Management
+```bash
+# Checkpoints are automatically saved with unique, descriptive names
+# Format: saved_models/{model_size}_{reward_funcs}_{timestamp}
+
+# Examples of auto-generated checkpoint directories:
+# saved_models/qwen2.5-0.5b_accuracy-format-reasoning_steps_20250106_143022
+# saved_models/qwen2.5-7b_all-rewards_20250106_143515
+
+# Custom output directory (optional)
+uv run train_grpo.py --output_dir "my_custom_experiment"
+
+# List saved checkpoints
+ls saved_models/
+
+# Use specific checkpoint for inference
+uv run python test_inference.py --checkpoint_path "saved_models/qwen2.5-0.5b_accuracy-format-reasoning_steps_20250106_143022/checkpoint-100"
+```
+
 ## Architecture
 
 ### Core Components

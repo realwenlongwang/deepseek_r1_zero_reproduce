@@ -66,7 +66,7 @@ def parse_args():
     parser.add_argument("--trust_remote_code", action="store_true", default=True,
                        help="Trust remote code")
     parser.add_argument("--attn_implementation", type=str, default="flash_attention_2",
-                       help="Attention implementation")
+                       help="Attention implementation (flash_attention_2 for speed)")
     
     # Dataset arguments
     parser.add_argument("--dataset_name", type=str, default="AI-MO/NuminaMath-TIR",
@@ -75,8 +75,8 @@ def parse_args():
                        help="Dataset subset")
     
     # Training arguments
-    parser.add_argument("--output_dir", type=str, default="./grpo_output",
-                       help="Output directory")
+    parser.add_argument("--output_dir", type=str, default=None,
+                       help="Output directory (auto-generated if not specified)")
     parser.add_argument("--num_train_epochs", type=float, default=1,
                        help="Number of training epochs")
     parser.add_argument("--per_device_train_batch_size", type=int, default=16,
@@ -150,14 +150,26 @@ def setup_model_and_tokenizer(model_args: ModelConfig):
         # Simple chat template for GRPO
         tokenizer.chat_template = "{% for message in messages %}{% if message['role'] == 'system' %}{{ message['content'] }}{% elif message['role'] == 'user' %}User: {{ message['content'] }}{% elif message['role'] == 'assistant' %}Assistant: {{ message['content'] }}{% endif %}{% if not loop.last %}\n{% endif %}{% endfor %}"
     
-    # Load model
+    # Load model with optimized device placement
+    # For small models (0.5B, 3B): use single GPU to avoid communication overhead
+    # For large models (7B+): use auto for memory distribution
+    device_map = None
+    if torch.cuda.is_available():
+        # Check model size to determine optimal device placement
+        if "0.5B" in model_args.model_name_or_path or "1B" in model_args.model_name_or_path or "1.5B" in model_args.model_name_or_path or "3B" in model_args.model_name_or_path:
+            device_map = "cuda:0"  # Single GPU for models up to 3B (faster)
+            logger.info("Using single GPU (cuda:0) for small-medium model - optimized for speed")
+        else:
+            device_map = "auto"  # Multi-GPU for large models (memory efficiency)
+            logger.info("Using auto device mapping for large model - optimized for memory")
+    
     model = AutoModelForCausalLM.from_pretrained(
         model_args.model_name_or_path,
         revision=model_args.model_revision,
         torch_dtype=getattr(torch, model_args.torch_dtype) if model_args.torch_dtype else None,
         trust_remote_code=model_args.trust_remote_code,
         attn_implementation=model_args.attn_implementation,
-        device_map="auto" if torch.cuda.is_available() else None
+        device_map=device_map
     )
     
     logger.info(f"Model loaded: {model.config.model_type}")
@@ -213,6 +225,48 @@ def create_grpo_trainer(model, tokenizer, reward_functions, training_args, train
     return grpo_trainer
 
 
+def generate_unique_output_dir(model_name: str, reward_funcs: list) -> str:
+    """
+    Generate a unique output directory name with descriptive information.
+    
+    Format: saved_models/{model_size}_{reward_funcs}_{timestamp}
+    Example: saved_models/qwen2.5-0.5b_accuracy-format-reasoning_20250106_143022
+    """
+    import datetime
+    import re
+    
+    # Extract model size from model name
+    model_size = "unknown"
+    if "0.5B" in model_name:
+        model_size = "qwen2.5-0.5b"
+    elif "1B" in model_name:
+        model_size = "qwen2.5-1b" 
+    elif "3B" in model_name:
+        model_size = "qwen2.5-3b"
+    elif "7B" in model_name:
+        model_size = "qwen2.5-7b"
+    elif "14B" in model_name:
+        model_size = "qwen2.5-14b"
+    else:
+        # Extract from model name if possible
+        model_size = model_name.split('/')[-1].lower()
+        model_size = re.sub(r'[^a-z0-9.-]', '-', model_size)
+    
+    # Create reward function string (limit to avoid very long names)
+    if len(reward_funcs) >= 4:
+        reward_str = "all-rewards"
+    else:
+        reward_str = "-".join(reward_funcs[:3])  # Take first 3 to avoid too long names
+        
+    # Generate timestamp
+    timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+    
+    # Combine into output directory
+    output_dir = f"saved_models/{model_size}_{reward_str}_{timestamp}"
+    
+    return output_dir
+
+
 def main():
     """Main training function."""
     args = parse_args()
@@ -239,6 +293,11 @@ def main():
         attn_implementation=args.attn_implementation
     )
     
+    # Generate unique output directory if not specified
+    if args.output_dir is None:
+        args.output_dir = generate_unique_output_dir(args.model_name, args.reward_funcs)
+        logger.info(f"Generated unique output directory: {args.output_dir}")
+    
     training_args = create_training_arguments(args.output_dir)
     
     # Override training arguments with command line args
@@ -250,6 +309,18 @@ def main():
     training_args.eval_steps = args.eval_steps
     training_args.save_steps = args.save_steps
     training_args.dataloader_num_workers = args.dataloader_num_workers
+    
+    # Fix dataloader settings for single-threaded optimization
+    if args.dataloader_num_workers == 0:
+        training_args.dataloader_persistent_workers = False  # Not applicable for single-threaded
+        training_args.dataloader_prefetch_factor = None     # Not applicable for single-threaded
+        training_args.dataloader_pin_memory = False         # Less beneficial for single-threaded
+        logger.info("Optimized dataloader settings for single-threaded (num_workers=0)")
+    elif args.dataloader_num_workers > 0:
+        training_args.dataloader_persistent_workers = True
+        training_args.dataloader_prefetch_factor = 4
+        training_args.dataloader_pin_memory = True
+        logger.info(f"Optimized dataloader settings for multi-threaded ({args.dataloader_num_workers} workers)")
     
     if not args.no_wandb:
         training_args.report_to = "wandb"

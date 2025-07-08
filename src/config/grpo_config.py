@@ -85,7 +85,7 @@ def create_training_arguments(output_dir: str = "./grpo_output") -> TrainingArgu
     """
     return TrainingArguments(
         output_dir=output_dir,              # Output directory for checkpoints and logs
-        overwrite_output_dir=True,
+        overwrite_output_dir=False,         # Preserve existing checkpoints (with unique names)
         num_train_epochs=1,                 # Total number of training epochs
         per_device_train_batch_size=16,     # INCREASED: Better GPU utilization (16*1=16, divisible by 8)
         per_device_eval_batch_size=32,      # INCREASED: Larger eval batch size
@@ -111,7 +111,7 @@ def create_training_arguments(output_dir: str = "./grpo_output") -> TrainingArgu
         gradient_checkpointing=False,       # Disabled for speed (we have abundant GPU memory)
         report_to="none",                   # Reporting to no one
         remove_unused_columns=False,        # Do not remove unused columns from the dataset
-        group_by_length=True,               # ENABLED: Group similar lengths for less padding
+        group_by_length=True              # ENABLED: Group similar lengths for less padding
     )
 
 
