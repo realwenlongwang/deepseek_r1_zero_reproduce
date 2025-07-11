@@ -1,0 +1,19 @@
+
+  export RANK=0
+  export WORLD_SIZE=1
+  export LOCAL_RANK=0
+  export MASTER_ADDR=localhost
+  export MASTER_PORT=29500
+  PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True \
+  CUDA_VISIBLE_DEVICES=4 uv run train_grpo.py \
+      --model_name "Qwen/Qwen2.5-3B" \
+
+      --per_device_train_batch_size 4 \
+      --gradient_accumulation_steps 1 \
+      --generation_batch_size 64 \
+      --max_completion_length 1024 \
+      --learning_rate 5e-5 \
+      --logging_steps 5 \
+      --dataloader_num_workers 0 \
+      --wandb_project "deepseek-r1-zero-grpo" \
+      --wandb_run_name "qwen2.5-3b-1024tokens-colocate-countdown"

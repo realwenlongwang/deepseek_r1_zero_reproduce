@@ -7,7 +7,6 @@ import os
 import sys
 import argparse
 import torch
-import random
 from transformers import AutoModelForCausalLM, AutoTokenizer
 from datasets import load_dataset
 
@@ -30,10 +29,6 @@ def parse_args():
                        help="Top-p sampling parameter")
     parser.add_argument("--sample_idx", type=int, default=0,
                        help="Which test sample to use (default: 0)")
-    parser.add_argument("--dataset", type=str, 
-                       choices=["numina", "countdown"], 
-                       default="countdown",
-                       help="Dataset to use for testing (default: countdown)")
     return parser.parse_args()
 
 def load_checkpoint(checkpoint_path):
@@ -64,81 +59,15 @@ def load_checkpoint(checkpoint_path):
     
     return model, tokenizer
 
-def get_test_sample_unified(dataset_type="countdown", sample_idx=0):
-    """Get a test sample from either NuminaMath or Countdown dataset."""
-    
-    if dataset_type == "numina":
-        # Use existing test split
-        print("Loading NuminaMath test dataset...")
-        dataset = load_dataset("AI-MO/NuminaMath-TIR", split="test")
-        
-        if sample_idx >= len(dataset):
-            raise ValueError(f"Sample index {sample_idx} out of range for NuminaMath test set (size: {len(dataset)})")
-        
-        sample = dataset[sample_idx]
-        print(f"Using NuminaMath test sample #{sample_idx} of {len(dataset)}")
-        
-        return {
-            "problem": sample["problem"],
-            "reference": sample["solution"],
-            "metadata": {
-                "dataset_type": "numina",
-                "total_test_size": len(dataset),
-                "sample_idx": sample_idx
-            }
-        }
-    
-    elif dataset_type == "countdown":
-        # Create deterministic test split
-        COUNTDOWN_SEED = 42
-        TEST_RATIO = 0.1
-        
-        print("Loading Countdown dataset and creating test split...")
-        # Load full dataset
-        dataset = load_dataset("Jiayi-Pan/Countdown-Tasks-3to4", split="train")
-        
-        # Create shuffled indices with fixed seed
-        random.seed(COUNTDOWN_SEED)
-        indices = list(range(len(dataset)))
-        random.shuffle(indices)
-        
-        # Calculate test set
-        test_size = int(len(dataset) * TEST_RATIO)
-        train_split_point = len(dataset) - test_size
-        test_indices = indices[train_split_point:]
-        
-        if sample_idx >= len(test_indices):
-            raise ValueError(f"Sample index {sample_idx} out of range for Countdown test set (size: {len(test_indices)})")
-        
-        # Get the actual sample
-        actual_idx = test_indices[sample_idx]
-        sample = dataset[actual_idx]
-        
-        # Format problem using existing function
-        from src.data.dataset import format_countdown_problem
-        problem_text = format_countdown_problem(sample["target"], sample["nums"])
-        
-        print(f"Using Countdown test sample #{sample_idx} of {len(test_indices)} (actual index: {actual_idx})")
-        
-        return {
-            "problem": problem_text,
-            "reference": f"Target: {sample['target']}",
-            "metadata": {
-                "dataset_type": "countdown",
-                "total_test_size": len(test_indices),
-                "sample_idx": sample_idx,
-                "target": sample["target"],
-                "nums": sample["nums"]
-            }
-        }
-    
-    else:
-        raise ValueError(f"Unknown dataset type: {dataset_type}")
-
-# Keep backward compatibility
 def get_test_sample(sample_idx=0):
-    """Legacy function for backward compatibility."""
-    return get_test_sample_unified("numina", sample_idx)
+    """Get a sample from the test dataset."""
+    print("Loading dataset...")
+    dataset = load_dataset("AI-MO/NuminaMath-TIR", split="test")
+    
+    # Get specified sample
+    sample = dataset[sample_idx]
+    print(f"Using test sample #{sample_idx}")
+    return sample
 
 def generate_response(model, tokenizer, prompt, max_length=512, temperature=0.7, top_p=0.9):
     """Generate response from the model."""
@@ -187,7 +116,6 @@ def main():
     
     print("=== INFERENCE TEST WITH CONFIGURABLE CHECKPOINT ===")
     print(f"Checkpoint: {args.checkpoint_path}")
-    print(f"Dataset: {args.dataset}")
     print(f"System prompt being used:\n{SYSTEM_PROMPT}")
     print("="*80)
     
@@ -195,18 +123,11 @@ def main():
     model, tokenizer = load_checkpoint(args.checkpoint_path)
     
     print("Getting test sample...")
-    sample = get_test_sample_unified(args.dataset, args.sample_idx)
+    sample = get_test_sample(args.sample_idx)
     
     print("Sample problem:")
     print(f"Problem: {sample['problem']}")
-    print(f"Ground truth/reference: {sample['reference']}")
-    
-    # Show dataset-specific metadata
-    metadata = sample['metadata']
-    if metadata['dataset_type'] == 'countdown':
-        print(f"Target: {metadata['target']}")
-        print(f"Numbers: {metadata['nums']}")
-    
+    print(f"Ground truth solution: {sample['solution']}")
     print("="*80)
     
     print(f"Generating response (max_length={args.max_length}, temp={args.temperature}, top_p={args.top_p})...")

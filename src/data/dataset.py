@@ -7,14 +7,14 @@ from transformers import PreTrainedTokenizer
 
 # DeepSeek system prompt for GRPO based training
 SYSTEM_PROMPT = (
-  f"""A conversation between User and Assistant. The user asks a question, 
-      and the Assistant solves it. The assistant
-      first thinks about the reasoning process in the mind and 
-      then provides the user with the answer. The reasoning
-      process and answer are enclosed within <think> </think> 
-      and <answer> </answer> tags, respectively, i.e., 
-      <think> reasoning process here </think><answer> answer here </answer>
-   """
+    "A conversation between User and Assistant. The user asks a question, "
+    "and the Assistant solves it. The assistant "
+    "first thinks about the reasoning process in the mind and "
+    "then provides the user with the answer. The reasoning "
+    "process and answer are enclosed within <think> </think> "
+    "and <answer> </answer> tags, respectively, i.e., "
+    "<think> reasoning process here </think>"
+    "<answer> answer here </answer>"
 )
 
 def make_conversation(example):
@@ -42,6 +42,17 @@ def make_conversation_bespoke(example):
         ],
     }
 
+def make_conversation_countdown(example):
+    """Convert Countdown-Tasks dataset into conversation format."""
+    problem_text = format_countdown_problem(example["target"], example["nums"])
+    
+    return {
+        "prompt": [
+            {"role": "system", "content": SYSTEM_PROMPT},
+            {"role": "user", "content": problem_text},
+        ],
+    }
+
 def convert_bespoke_tags(text: str) -> str:
     """Convert Bespoke-Stratos tags to our format."""
     # Convert <|begin_of_thought|> to <think>
@@ -62,10 +73,22 @@ def extract_boxed_answer(text: str) -> str:
         return matches[-1]  # Return the last boxed answer
     return ""
 
+def format_countdown_problem(target: int, nums: List[int]) -> str:
+    """Format countdown numbers game as a natural language problem."""
+    nums_str = ", ".join(map(str, nums[:-1])) + f", and {nums[-1]}" if len(nums) > 1 else str(nums[0])
+    
+    problem = (
+        f"Use the numbers {nums_str} with basic arithmetic operations "
+        f"(+, -, ×, ÷) to reach the target number {target}. "
+        f"You can use each number at most once. Show your reasoning step by step."
+    )
+    
+    return problem
+
 class ReasoningDataset:
     def __init__(
         self,
-        dataset_name: str = "AI-MO/NuminaMath-TIR",
+        dataset_name: str = "Jiayi-Pan/Countdown-Tasks-3to4",
         split: str = "train",
         max_length: int = 2048,
         tokenizer: Optional[PreTrainedTokenizer] = None
@@ -75,6 +98,7 @@ class ReasoningDataset:
         self.max_length = max_length
         self.tokenizer = tokenizer
         
+        # Load and preprocess the dataset
         self.dataset = self._load_and_preprocess()
     
     def _load_and_preprocess(self) -> Dataset:
@@ -87,6 +111,11 @@ class ReasoningDataset:
         if "Bespoke-Stratos" in self.dataset_name:
             for item in raw_dataset:
                 processed_item = self._process_bespoke_item(item)
+                if processed_item:
+                    processed_data.append(processed_item)
+        elif "Countdown-Tasks" in self.dataset_name:
+            for item in raw_dataset:
+                processed_item = self._process_countdown_item(item)
                 if processed_item:
                     processed_data.append(processed_item)
         else:
@@ -135,6 +164,42 @@ class ReasoningDataset:
         
         except Exception as e:
             print(f"Error processing Bespoke item: {e}")
+            return None
+    
+    def _process_countdown_item(self, item: Dict) -> Optional[Dict]:
+        """Process Countdown-Tasks dataset items."""
+        try:
+            target = item.get("target")
+            nums = item.get("nums", [])
+            
+            if target is None or not nums:
+                return None
+            
+            # Create conversation data
+            conversation_data = make_conversation_countdown(item)
+            
+            # Create problem text for reference
+            problem_text = format_countdown_problem(target, nums)
+            
+            # Create reference solution in format compatible with accuracy_reward
+            # This should be parseable by math_verify.parse() like NuminaMath solutions
+            reference_solution = f"To reach the target {target} using the given numbers, we need to find the correct arithmetic operations.\n\n\\boxed{{{target}}}"
+            
+            # Extract answer for reference (similar to NuminaMath processing)
+            reference_answer = str(target)
+            
+            return {
+                "prompt": conversation_data["prompt"],
+                "problem": problem_text,
+                "reference_solution": reference_solution,
+                "reference_answer": reference_answer,
+                "target": target,
+                "nums": nums,
+                "dataset_type": "countdown"
+            }
+        
+        except Exception as e:
+            print(f"Error processing Countdown item: {e}")
             return None
     
     def _process_numina_item(self, item: Dict) -> Optional[Dict]:
@@ -211,7 +276,7 @@ class ReasoningDataset:
         return [self[idx] for idx in indices]
 
 def create_dataset(
-    dataset_name: str = "AI-MO/NuminaMath-TIR",
+    dataset_name: str = "Jiayi-Pan/Countdown-Tasks-3to4",
     split: str = "train",
     max_length: int = 2048,
     tokenizer: Optional[PreTrainedTokenizer] = None

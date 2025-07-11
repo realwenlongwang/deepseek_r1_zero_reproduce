@@ -11,3 +11,7 @@ wheels/
 models/
 wandb/
 saved_models/
+.history/
+.pytest_cache/
+.vscode/
+

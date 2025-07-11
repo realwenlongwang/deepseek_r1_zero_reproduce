@@ -15,7 +15,7 @@ class GRPOScriptArguments:
     """
 
     reward_funcs: List[str] = field(
-        default_factory=lambda: ["accuracy", "format", "reasoning_steps", "cosine", "repetition_penalty"],
+        default_factory=lambda: ["equation", "format"],
         metadata={
             "help": "List of reward functions. Possible values: 'accuracy', 'format', 'reasoning_steps', 'cosine', 'repetition_penalty'"
         },
@@ -48,6 +48,20 @@ class GRPOScriptArguments:
     repetition_max_penalty: float = field(
         default=-0.1,
         metadata={"help": "Maximum (negative) penalty for for repetition penalty reward"},
+    )
+    
+    # Additional parameters for OpenR1 rewards
+    code_language: str = field(
+        default="python",
+        metadata={"help": "Programming language for code format reward"},
+    )
+    max_completion_len: int = field(
+        default=512,
+        metadata={"help": "Maximum completion length for soft overlong punishment"},
+    )
+    soft_punish_cache: int = field(
+        default=50,
+        metadata={"help": "Soft punishment cache for overlong completions"},
     )
 
 
@@ -121,15 +135,26 @@ def create_grpo_config(training_args, max_completion_length=512, generation_batc
     """
     from trl import GRPOConfig
     
-    # Create GRPOConfig from TrainingArguments with performance optimizations
-    grpo_config = GRPOConfig(
-        **training_args.to_dict(),
-        # GRPO-specific optimizations for better GPU utilization
-        max_completion_length=max_completion_length,    # Configurable completion length
-        generation_batch_size=generation_batch_size,    # Configurable generation batch size
-        # Note: Cannot set both generation_batch_size and steps_per_generation
-        num_generations=8,                              # Standard GRPO setting
-    )
+    # Create base config dict from training args
+    config_dict = training_args.to_dict()
+    
+    # Add GRPO-specific optimizations for better GPU utilization
+    config_dict.update({
+        "max_completion_length": max_completion_length,    # Configurable completion length
+        "generation_batch_size": generation_batch_size,    # Configurable generation batch size
+        "num_generations": 8,                              # Standard GRPO setting
+        "use_vllm": True,                                  # Enable vLLM with colocated mode
+        "vllm_mode": "colocate",                           # Use colocated mode (same GPU)
+        "vllm_gpu_memory_utilization": 0.3,                # Use 30% GPU memory for vLLM
+        "use_liger_loss": False,
+    })
+    
+    # Only add generation_kwargs if it's supported in this TRL version
+    try:
+        grpo_config = GRPOConfig(**config_dict, generation_kwargs={})
+    except TypeError:
+        # Fallback for older TRL versions that don't support generation_kwargs
+        grpo_config = GRPOConfig(**config_dict)
     
     return grpo_config
 
@@ -139,10 +164,10 @@ def get_reward_functions(script_args: GRPOScriptArguments):
     Returns a list of TRL-compatible reward functions based on the script arguments.
     These functions work with TRL's GRPOTrainer interface.
     """
-    from ..rewards.trl_reward_functions import get_reward_functions as get_trl_reward_functions
+    from ..rewards.openr1_rewards import get_reward_funcs
     
-    # Create TRL-compatible reward functions
-    reward_functions = get_trl_reward_functions(script_args)
+    # Create reward functions using OpenR1 registry pattern
+    reward_functions = get_reward_funcs(script_args)
     
     return reward_functions
 
@@ -157,10 +182,86 @@ import re
 logger = logging.getLogger(__name__)
 
 
+class ProductionLoggingCallback(TrainerCallback):
+    """
+    Lightweight production callback with minimal overhead.
+    Focuses on essential metrics without heavy timing measurements.
+    """
+    
+    def __init__(self, script_args: GRPOScriptArguments):
+        self.script_args = script_args
+        self.reward_history = defaultdict(list)
+        
+    def on_step_end(self, args: TrainingArguments, state: TrainerState, control: TrainerControl, **kwargs):
+        """Log essential metrics at each step."""
+        if state.global_step % args.logging_steps == 0:
+            self._log_basic_metrics(args, state, **kwargs)
+            self._log_reward_metrics(**kwargs)
+            self._log_memory_usage()
+            
+    def _log_basic_metrics(self, args: TrainingArguments, state: TrainerState, **kwargs):
+        """Log basic training metrics."""
+        if not state.log_history:
+            return
+            
+        latest_log = state.log_history[-1]
+        
+        # Basic metrics
+        loss = latest_log.get('loss', None)
+        lr = latest_log.get('learning_rate', None)
+        
+        # GRPO-specific losses
+        policy_loss = latest_log.get('policy_loss', None)
+        value_loss = latest_log.get('value_loss', None)
+        entropy_loss = latest_log.get('entropy_loss', None)
+        
+        logger.info(f"Step {state.global_step:4d} | "
+                   f"Loss: {loss:.4f} | "
+                   f"LR: {lr:.2e} | "
+                   f"Epoch: {state.epoch:.2f}")
+        
+        if policy_loss is not None:
+            logger.info(f"  Policy Loss: {policy_loss:.4f} | "
+                       f"Value Loss: {value_loss:.4f} | "
+                       f"Entropy Loss: {entropy_loss:.4f}")
+    
+    def _log_reward_metrics(self, **kwargs):
+        """Log reward function metrics."""
+        try:
+            rewards = kwargs.get('rewards', None)
+            if rewards is None:
+                return
+                
+            if hasattr(rewards, 'shape') and len(rewards.shape) > 1:
+                # Multi-dimensional reward tensor
+                mean_reward = float(rewards.mean())
+                std_reward = float(rewards.std())
+                
+                logger.info(f"Rewards: mean={mean_reward:.4f}, std={std_reward:.4f}")
+                
+                # Track history for basic statistics
+                self.reward_history['mean'].append(mean_reward)
+                self.reward_history['std'].append(std_reward)
+                
+        except Exception as e:
+            logger.warning(f"Error logging reward metrics: {e}")
+    
+    def _log_memory_usage(self):
+        """Log memory usage without performance impact."""
+        try:
+            if torch.cuda.is_available():
+                # Peak memory usage (no synchronization required)
+                gpu_memory = torch.cuda.max_memory_allocated() / 1024**3
+                logger.info(f"GPU Memory: {gpu_memory:.2f}GB")
+                
+        except Exception as e:
+            logger.warning(f"Error logging memory usage: {e}")
+
+
 class ComprehensiveLoggingCallback(TrainerCallback):
     """
-    Comprehensive callback for logging detailed GRPO training metrics.
-    Tracks reward breakdowns, generation quality, model performance, and more.
+    Comprehensive callback for profiling detailed GRPO training metrics.
+    Uses accurate GPU timing and detailed measurements. HIGH OVERHEAD - for profiling only.
     """
     
     def __init__(self, script_args: GRPOScriptArguments, log_examples: bool = True):
@@ -171,8 +272,19 @@ class ComprehensiveLoggingCallback(TrainerCallback):
         self.reward_history = defaultdict(list)
         self.generation_stats = defaultdict(list)
         
+        # CUDA events for accurate GPU timing
+        if torch.cuda.is_available():
+            self.cuda_start = torch.cuda.Event(enable_timing=True)
+            self.cuda_end = torch.cuda.Event(enable_timing=True)
+        else:
+            self.cuda_start = None
+            self.cuda_end = None
+        
     def on_step_begin(self, args: TrainingArguments, state: TrainerState, control: TrainerControl, **kwargs):
-        """Track step timing."""
+        """Track step timing with accurate GPU measurement."""
+        if self.cuda_start is not None:
+            # Record CUDA event for accurate GPU timing
+            self.cuda_start.record()
         self.step_start_time = time.time()
     
     def on_step_end(self, args: TrainingArguments, state: TrainerState, control: TrainerControl, **kwargs):
@@ -319,15 +431,36 @@ class ComprehensiveLoggingCallback(TrainerCallback):
             logger.warning(f"Error logging generation quality: {e}")
     
     def _log_performance_metrics(self, args: TrainingArguments, state: TrainerState, **kwargs):
-        """Log training performance metrics."""
+        """Log training performance metrics with accurate GPU timing."""
         try:
-            # Calculate step timing
-            step_time = time.time() - self.step_start_time if self.step_start_time else 0
+            # Calculate accurate GPU timing
+            if self.cuda_start is not None and self.cuda_end is not None:
+                # Record end event and synchronize for accurate timing
+                self.cuda_end.record()
+                torch.cuda.synchronize()  # Wait for GPU to complete
+                gpu_time = self.cuda_start.elapsed_time(self.cuda_end) / 1000.0  # Convert to seconds
+            else:
+                gpu_time = 0
+                
+            # CPU wall-clock time (for comparison)
+            cpu_wall_time = time.time() - self.step_start_time if self.step_start_time else 0
             
-            # Memory usage
+            # Calculate effective batch size for accurate throughput
+            effective_batch_size = (args.per_device_train_batch_size * 
+                                  max(1, torch.cuda.device_count()) * 
+                                  args.gradient_accumulation_steps)
+            
+            # Memory usage across all GPUs
             if torch.cuda.is_available():
                 gpu_memory = torch.cuda.max_memory_allocated() / 1024**3  # GB
                 gpu_reserved = torch.cuda.max_memory_reserved() / 1024**3  # GB
+                
+                # Multi-GPU memory usage
+                if torch.cuda.device_count() > 1:
+                    total_gpu_memory = 0
+                    for i in range(torch.cuda.device_count()):
+                        total_gpu_memory += torch.cuda.max_memory_allocated(i) / 1024**3
+                    gpu_memory = total_gpu_memory
             else:
                 gpu_memory = gpu_reserved = 0
             
@@ -336,12 +469,19 @@ class ComprehensiveLoggingCallback(TrainerCallback):
             memory_info = psutil.virtual_memory()
             ram_usage = memory_info.used / 1024**3  # GB
             
-            # Training speed estimates
-            samples_per_sec = args.per_device_train_batch_size / max(step_time, 0.001)
+            # Training speed estimates (using GPU time if available)
+            actual_time = gpu_time if gpu_time > 0 else cpu_wall_time
+            actual_time_per_step = actual_time / args.logging_steps  # Time per individual step
+            samples_per_sec = effective_batch_size / max(actual_time_per_step, 0.001)
             
-            logger.info(f"Performance:")
-            logger.info(f"  Step time:     {step_time:6.2f}s")
+            logger.info(f"Performance (over {args.logging_steps} steps):")
+            if gpu_time > 0:
+                logger.info(f"  GPU time:      {gpu_time:6.2f}s")
+                logger.info(f"  CPU wall time: {cpu_wall_time:6.2f}s")
+            else:
+                logger.info(f"  Step time:     {cpu_wall_time:6.2f}s")
             logger.info(f"  Samples/sec:   {samples_per_sec:6.1f}")
+            logger.info(f"  Effective batch size: {effective_batch_size}")
             logger.info(f"  GPU memory:    {gpu_memory:6.2f}GB (reserved: {gpu_reserved:6.2f}GB)")
             logger.info(f"  RAM usage:     {ram_usage:6.2f}GB ({memory_info.percent:5.1f}%)")
             logger.info(f"  CPU usage:     {cpu_percent:5.1f}%")
@@ -447,12 +587,67 @@ class RewardTrendCallback(TrainerCallback):
                                    f"({older_mean:.3f} → {recent_mean:.3f})")
 
 
-def get_callbacks(training_args: TrainingArguments, model_args: ModelConfig, script_args: GRPOScriptArguments):
+class DelayedDirectoryCreationCallback(TrainerCallback):
     """
-    Returns a list of comprehensive callbacks for GRPO training monitoring.
+    Callback that delays the creation of the actual output directory until the first checkpoint save.
+    This prevents empty folders from being created when training fails early.
     """
-    callbacks = [
-        ComprehensiveLoggingCallback(script_args, log_examples=True),
-        RewardTrendCallback(window_size=50)
-    ]
+    
+    def __init__(self, actual_output_dir: str):
+        self.actual_output_dir = actual_output_dir
+        self.directory_created = False
+        
+    def on_save(self, args: TrainingArguments, state: TrainerState, control: TrainerControl, **kwargs):
+        """Create the actual output directory on first save."""
+        if not self.directory_created:
+            import os
+            import shutil
+            
+            # Create the actual output directory
+            os.makedirs(self.actual_output_dir, exist_ok=True)
+            logger.info(f"Created output directory: {self.actual_output_dir}")
+            
+            # Move any existing files from temp directory to actual directory
+            if os.path.exists(args.output_dir) and args.output_dir != self.actual_output_dir:
+                # Copy contents from temp to actual directory
+                for item in os.listdir(args.output_dir):
+                    src_path = os.path.join(args.output_dir, item)
+                    dst_path = os.path.join(self.actual_output_dir, item)
+                    if os.path.isdir(src_path):
+                        shutil.copytree(src_path, dst_path)
+                    else:
+                        shutil.copy2(src_path, dst_path)
+                
+                # Update the args to point to the actual directory
+                args.output_dir = self.actual_output_dir
+                logger.info(f"Moved checkpoint to: {self.actual_output_dir}")
+            
+            self.directory_created = True
+
+
+def get_callbacks(training_args: TrainingArguments, model_args: ModelConfig, script_args: GRPOScriptArguments, delayed_dir_callback=None, profiling_mode=False):
+    """
+    Returns a list of callbacks for GRPO training monitoring.
+    
+    Args:
+        profiling_mode: If True, uses ComprehensiveLoggingCallback with heavy profiling.
+                       If False, uses ProductionLoggingCallback with minimal overhead.
+    """
+    if profiling_mode:
+        # Heavy profiling with accurate GPU timing - for profiling script only
+        callbacks = [
+            ComprehensiveLoggingCallback(script_args, log_examples=True),
+            RewardTrendCallback(window_size=50)
+        ]
+    else:
+        # Lightweight production callbacks - for actual training
+        callbacks = [
+            ProductionLoggingCallback(script_args),
+            RewardTrendCallback(window_size=50)
+        ]
+    
+    # Add delayed directory creation callback if provided
+    if delayed_dir_callback is not None:
+        callbacks.append(delayed_dir_callback)
+    
     return callbacks

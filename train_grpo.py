@@ -21,13 +21,11 @@ from transformers import (
     AutoModelForCausalLM,
     AutoTokenizer, 
     set_seed,
-    HfArgumentParser
 )
 
 # Import TRL for GRPO training (following tutorial)
 from trl import (
     GRPOTrainer,
-    GRPOConfig
 )
 
 # Import tutorial-based GRPO components
@@ -59,7 +57,7 @@ def parse_args():
     parser = argparse.ArgumentParser(description="Train DeepSeek R1 Zero with comprehensive GRPO")
     
     # Model arguments
-    parser.add_argument("--model_name", type=str, default="Qwen/Qwen2.5-7B-Instruct",
+    parser.add_argument("--model_name", type=str, default="Qwen/Qwen2.5-0.5B-Instruct",
                        help="Model name or path")
     parser.add_argument("--torch_dtype", type=str, default="bfloat16",
                        help="Model dtype")
@@ -69,7 +67,7 @@ def parse_args():
                        help="Attention implementation (flash_attention_2 for speed)")
     
     # Dataset arguments
-    parser.add_argument("--dataset_name", type=str, default="AI-MO/NuminaMath-TIR",
+    parser.add_argument("--dataset_name", type=str, default="Jiayi-Pan/Countdown-Tasks-3to4",
                        help="Dataset name")
     parser.add_argument("--dataset_subset", type=str, default=None,
                        help="Dataset subset")
@@ -100,7 +98,7 @@ def parse_args():
     
     # Reward function arguments
     parser.add_argument("--reward_funcs", nargs="+", 
-                       default=["accuracy", "format", "reasoning_steps", "cosine", "repetition_penalty"],
+                       default=["format", "equation"],
                        help="Reward functions to use")
     parser.add_argument("--cosine_min_value_wrong", type=float, default=-0.5,
                        help="Cosine scaling min value for wrong answers")
@@ -169,6 +167,7 @@ def setup_model_and_tokenizer(model_args: ModelConfig):
         torch_dtype=getattr(torch, model_args.torch_dtype) if model_args.torch_dtype else None,
         trust_remote_code=model_args.trust_remote_code,
         attn_implementation=model_args.attn_implementation,
+        use_cache=False,
         device_map=device_map
     )
     
@@ -295,10 +294,17 @@ def main():
     
     # Generate unique output directory if not specified
     if args.output_dir is None:
-        args.output_dir = generate_unique_output_dir(args.model_name, args.reward_funcs)
-        logger.info(f"Generated unique output directory: {args.output_dir}")
+        actual_output_dir = generate_unique_output_dir(args.model_name, args.reward_funcs)
+        logger.info(f"Generated unique output directory: {actual_output_dir}")
+    else:
+        actual_output_dir = args.output_dir
     
-    training_args = create_training_arguments(args.output_dir)
+    # Use a temporary directory for initial training setup
+    import tempfile
+    temp_output_dir = tempfile.mkdtemp(prefix="grpo_temp_")
+    logger.info(f"Using temporary directory for initial setup: {temp_output_dir}")
+    
+    training_args = create_training_arguments(temp_output_dir)
     
     # Override training arguments with command line args
     training_args.num_train_epochs = args.num_train_epochs
@@ -365,8 +371,12 @@ def main():
         reward_functions = get_reward_functions(script_args)
         logger.info(f"Initialized {len(reward_functions)} reward functions")
         
+        # Create delayed directory creation callback
+        from src.config.grpo_config import DelayedDirectoryCreationCallback
+        delayed_dir_callback = DelayedDirectoryCreationCallback(actual_output_dir)
+        
         # Get comprehensive callbacks
-        callbacks = get_callbacks(training_args, model_args, script_args)
+        callbacks = get_callbacks(training_args, model_args, script_args, delayed_dir_callback, profiling_mode=False)
         logger.info(f"Initialized {len(callbacks)} comprehensive callbacks")
         
         # Create real GRPO trainer with optimized configuration
@@ -394,12 +404,29 @@ def main():
         
     except KeyboardInterrupt:
         logger.info("\nTraining interrupted by user")
+        # Clean up temporary directory if it still exists
+        import shutil
+        if os.path.exists(temp_output_dir):
+            shutil.rmtree(temp_output_dir)
+            logger.info(f"Cleaned up temporary directory: {temp_output_dir}")
         
     except Exception as e:
         logger.error(f"\nTraining failed with error: {e}")
         import traceback
         traceback.print_exc()
+        # Clean up temporary directory if it still exists
+        import shutil
+        if os.path.exists(temp_output_dir):
+            shutil.rmtree(temp_output_dir)
+            logger.info(f"Cleaned up temporary directory: {temp_output_dir}")
         sys.exit(1)
+    
+    finally:
+        # Clean up temporary directory if it still exists and wasn't moved
+        import shutil
+        if os.path.exists(temp_output_dir) and temp_output_dir != actual_output_dir:
+            shutil.rmtree(temp_output_dir)
+            logger.info(f"Final cleanup of temporary directory: {temp_output_dir}")
 
 
 if __name__ == "__main__":

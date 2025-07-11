@@ -9,7 +9,7 @@ This implementation follows the exact specifications from the [DeepSeek R1 train
 - **📊 Comprehensive GRPO Training**: Full implementation with 5 reward functions
 - **🎯 Multi-Reward System**: Accuracy, format, reasoning steps, cosine scaling, repetition penalty
 - **📈 Advanced Logging**: Detailed training metrics, reward breakdowns, generation quality analysis
-- **📚 Multi-Dataset Support**: NuminaMath-TIR and Bespoke-Stratos-17k datasets
+- **📚 Multi-Dataset Support**: Countdown-Tasks, NuminaMath-TIR and Bespoke-Stratos-17k datasets
 - **🤔 Structured Reasoning**: `<think>` and `<answer>` tags for step-by-step reasoning
 - **⚡ Performance Optimized**: Flash Attention 2, gradient checkpointing, mixed precision
 - **🔧 Flexible Configuration**: Command-line arguments and tutorial-exact configurations
@@ -33,7 +33,7 @@ uv run train_grpo.py --no_wandb --reward_funcs accuracy format reasoning_steps
 # Full training with all reward functions
 uv run train_grpo.py \
     --model_name "Qwen/Qwen2.5-7B-Instruct" \
-    --dataset_name "AI-MO/NuminaMath-TIR" \
+    --dataset_name "Jiayi-Pan/Countdown-Tasks-3to4" \
     --reward_funcs accuracy format reasoning_steps cosine repetition_penalty \
     --learning_rate 5e-5 \
     --per_device_train_batch_size 8 \
@@ -151,6 +151,7 @@ deepseek_r1_zero_repro/
 ## 📚 Dataset Support
 
 ### Supported Datasets
+- **Countdown-Tasks-3to4**: Number puzzle games requiring arithmetic operations (default)
 - **NuminaMath-TIR**: Mathematical reasoning problems
 - **Bespoke-Stratos-17k**: Structured reasoning datasets
 - **Custom datasets**: Any dataset with `problem` field
