@@ -1,0 +1,197 @@
+# DeepSeek R1 Zero GRPO Training Configuration
+# This is the centralized configuration file for the DeepSeek R1 Zero reproduction project.
+
+# Project metadata
+project:
+  name: "deepseek-r1-zero-grpo"
+  version: "1.0.0"
+  description: "DeepSeek R1 Zero reproduction with GRPO training"
+
+# Model configuration
+model:
+  name: "Qwen/Qwen2.5-0.5B-Instruct"
+  revision: "main"
+  torch_dtype: "bfloat16"
+  trust_remote_code: true
+  attn_implementation: "flash_attention_2"
+  device_placement: "auto"  # auto, single, multi
+
+# Training configuration
+training:
+  epochs: 1.0
+  
+  # Batch size settings
+  batch_size:
+    per_device_train: 16
+    per_device_eval: 32
+    gradient_accumulation_steps: 1
+    generation_batch_size: 32
+  
+  # Optimization settings
+  optimization:
+    learning_rate: 5.0e-5
+    warmup_ratio: 0.1
+    weight_decay: 0.01
+  
+  # Mixed precision settings
+  precision:
+    bf16: true
+    tf32: true
+    gradient_checkpointing: false
+  
+  # Training schedule
+  scheduling:
+    logging_steps: 10
+    eval_strategy: "no"
+    eval_steps: 50
+    save_strategy: "steps"
+    save_steps: 50
+    save_total_limit: 2
+  
+  # Dataloader settings
+  dataloader:
+    num_workers: 8
+    pin_memory: true
+    persistent_workers: true
+    prefetch_factor: 4
+    drop_last: true
+    group_by_length: true
+
+# Dataset configuration
+dataset:
+  name: "Jiayi-Pan/Countdown-Tasks-3to4"
+  subset: null
+  
+  # Dataset splitting
+  split:
+    test_size: 0.1
+    seed: 42
+  
+  # Data processing
+  processing:
+    max_length: 2048
+    system_prompt: "You are a helpful assistant that provides step-by-step reasoning."
+
+# GRPO-specific configuration
+grpo:
+  num_generations: 8
+  max_completion_length: 512
+  
+  # vLLM configuration
+  vllm:
+    enabled: true
+    mode: "colocate"
+    gpu_memory_utilization: 0.3
+  
+  liger_loss: false
+
+# Reward function configuration
+rewards:
+  functions: ["format", "equation"]
+  
+  # Cosine reward parameters
+  cosine:
+    min_value_wrong: -0.5
+    max_value_wrong: -0.1
+    min_value_correct: 0.8
+    max_value_correct: 1.0
+    max_len: 1000
+  
+  # Repetition penalty parameters
+  repetition:
+    n_grams: 3
+    max_penalty: -0.1
+  
+  # Code reward parameters
+  code:
+    language: "python"
+  
+  # Soft punishment parameters
+  soft_punish:
+    max_completion_len: 512
+    cache: 50
+
+# System configuration
+system:
+  seed: 42
+  output_dir: null  # auto-generated if null
+
+# Monitoring and logging
+monitoring:
+  # Weights & Biases
+  wandb:
+    enabled: true
+    project: "deepseek-r1-zero-grpo"
+    run_name: null
+  
+  # Logging configuration
+  logging:
+    level: "INFO"
+    file: "training.log"
+    profiling_mode: false
+
+# Callback configuration
+callbacks:
+  # Comprehensive logging callback
+  comprehensive_logging:
+    enabled: false
+    log_examples: true
+  
+  # Reward trend analysis
+  reward_trend:
+    window_size: 50
+  
+  # Checkpoint preservation
+  checkpoint_preservation:
+    enabled: true
+    every_n_steps: 2000
+    directory: "permanent_checkpoints"
+
+# Configuration profiles for different environments
+_profiles:
+  # Development profile - faster training, less logging
+  dev:
+    training.epochs: 0.1
+    training.batch_size.per_device_train: 8
+    training.scheduling.logging_steps: 5
+    training.scheduling.save_steps: 25
+    monitoring.wandb.enabled: false
+    monitoring.logging.profiling_mode: false
+    callbacks.checkpoint_preservation.enabled: false
+    model.name: "Qwen/Qwen2.5-0.5B-Instruct"
+  
+  # Production profile - full training, comprehensive logging
+  prod:
+    training.epochs: 3.0
+    training.batch_size.per_device_train: 8
+    training.optimization.learning_rate: 3.0e-5
+    monitoring.wandb.enabled: true
+    monitoring.logging.profiling_mode: false
+    callbacks.comprehensive_logging.enabled: false
+    callbacks.checkpoint_preservation.enabled: true
+    callbacks.checkpoint_preservation.every_n_steps: 1000
+    model.name: "Qwen/Qwen2.5-7B-Instruct"
+  
+  # Testing profile - minimal resources, quick validation
+  test:
+    training.epochs: 0.01
+    training.batch_size.per_device_train: 8
+    training.scheduling.logging_steps: 1
+    training.scheduling.save_steps: 10
+    monitoring.wandb.enabled: false
+    callbacks.checkpoint_preservation.enabled: false
+    dataset.split.test_size: 0.05
+    rewards.functions: ["format"]
+    model.name: "Qwen/Qwen2.5-0.5B-Instruct"
+  
+  # Profiling profile - detailed performance analysis
+  profile:
+    training.epochs: 0.1
+    training.batch_size.per_device_train: 8
+    training.scheduling.logging_steps: 1
+    monitoring.wandb.enabled: false
+    monitoring.logging.profiling_mode: true
+    callbacks.comprehensive_logging.enabled: true
+    callbacks.comprehensive_logging.log_examples: true
+    callbacks.checkpoint_preservation.enabled: false
+    model.name: "Qwen/Qwen2.5-0.5B-Instruct"

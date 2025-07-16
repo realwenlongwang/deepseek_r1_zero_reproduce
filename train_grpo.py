@@ -1,12 +1,11 @@
 #!/usr/bin/env python3
 """
-DeepSeek R1 Zero Training Script with Comprehensive GRPO Implementation
-Following the exact tutorial specifications with comprehensive logging.
+DeepSeek R1 Zero Training Script with Centralized YAML Configuration
+Enhanced with comprehensive configuration management and CLI overrides.
 """
 
 import os
 import sys
-import argparse
 import logging
 import warnings
 warnings.filterwarnings("ignore")
@@ -23,22 +22,16 @@ from transformers import (
     set_seed,
 )
 
-# Import TRL for GRPO training (following tutorial)
+# Import TRL for GRPO training
 from trl import (
     GRPOTrainer,
+    GRPOConfig,
 )
 
-# Import tutorial-based GRPO components
-from src.config.grpo_config import (
-    GRPOScriptArguments,
-    ModelConfig,
-    create_training_arguments,
-    create_grpo_config,
-    get_reward_functions,
-    get_callbacks
-)
+# Import new configuration system
+from src.config import ConfigManager, Config, ValidationError
 from src.data.dataset import create_dataset, create_train_test_datasets
-from src.rewards.tutorial_rewards import TutorialRewardSystem
+from src.rewards.openr1_rewards import get_reward_funcs
 
 # Set up logging
 logging.basicConfig(
@@ -52,101 +45,16 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 
-def parse_args():
-    """Parse command line arguments."""
-    parser = argparse.ArgumentParser(description="Train DeepSeek R1 Zero with comprehensive GRPO")
-    
-    # Model arguments
-    parser.add_argument("--model_name", type=str, default="Qwen/Qwen2.5-0.5B-Instruct",
-                       help="Model name or path")
-    parser.add_argument("--torch_dtype", type=str, default="bfloat16",
-                       help="Model dtype")
-    parser.add_argument("--trust_remote_code", action="store_true", default=True,
-                       help="Trust remote code")
-    parser.add_argument("--attn_implementation", type=str, default="flash_attention_2",
-                       help="Attention implementation (flash_attention_2 for speed)")
-    
-    # Dataset arguments
-    parser.add_argument("--dataset_name", type=str, default="Jiayi-Pan/Countdown-Tasks-3to4",
-                       help="Dataset name")
-    parser.add_argument("--dataset_subset", type=str, default=None,
-                       help="Dataset subset")
-    parser.add_argument("--test_size", type=float, default=0.1,
-                       help="Test split size (default: 0.1 = 10%)")
-    parser.add_argument("--split_seed", type=int, default=42,
-                       help="Random seed for train/test split")
-    
-    # Training arguments
-    parser.add_argument("--output_dir", type=str, default=None,
-                       help="Output directory (auto-generated if not specified)")
-    parser.add_argument("--num_train_epochs", type=float, default=1,
-                       help="Number of training epochs")
-    parser.add_argument("--per_device_train_batch_size", type=int, default=16,
-                       help="Train batch size per device (optimized for L40S)")
-    parser.add_argument("--gradient_accumulation_steps", type=int, default=1,
-                       help="Gradient accumulation steps (reduced for larger batch)")
-    parser.add_argument("--learning_rate", type=float, default=5e-5,
-                       help="Learning rate")
-    parser.add_argument("--logging_steps", type=int, default=10,
-                       help="Logging frequency")
-    parser.add_argument("--eval_steps", type=int, default=50,
-                       help="Evaluation frequency")
-    parser.add_argument("--save_steps", type=int, default=50,
-                       help="Save frequency")
-    parser.add_argument("--max_completion_length", type=int, default=512,
-                       help="Maximum completion length (increased to fix truncation)")
-    parser.add_argument("--generation_batch_size", type=int, default=32,
-                       help="Batch size for generation phase")
-    parser.add_argument("--dataloader_num_workers", type=int, default=8,
-                       help="Number of dataloader workers (increased for performance)")
-    
-    # Reward function arguments
-    parser.add_argument("--reward_funcs", nargs="+", 
-                       default=["format", "equation"],
-                       help="Reward functions to use")
-    parser.add_argument("--cosine_min_value_wrong", type=float, default=-0.5,
-                       help="Cosine scaling min value for wrong answers")
-    parser.add_argument("--cosine_max_value_wrong", type=float, default=-0.1,
-                       help="Cosine scaling max value for wrong answers")
-    parser.add_argument("--cosine_min_value_correct", type=float, default=0.8,
-                       help="Cosine scaling min value for correct answers")
-    parser.add_argument("--cosine_max_value_correct", type=float, default=1.0,
-                       help="Cosine scaling max value for correct answers")
-    parser.add_argument("--cosine_max_len", type=int, default=1000,
-                       help="Cosine scaling max length")
-    parser.add_argument("--repetition_n_grams", type=int, default=3,
-                       help="N-grams for repetition penalty")
-    parser.add_argument("--repetition_max_penalty", type=float, default=-0.1,
-                       help="Max repetition penalty")
-    
-    # System arguments
-    parser.add_argument("--seed", type=int, default=42,
-                       help="Random seed")
-    parser.add_argument("--wandb_project", type=str, default="deepseek-r1-zero-grpo",
-                       help="Weights & Biases project")
-    parser.add_argument("--wandb_run_name", type=str, default=None,
-                       help="Weights & Biases run name")
-    parser.add_argument("--no_wandb", action="store_true",
-                       help="Disable Weights & Biases")
-    
-    # Checkpoint preservation arguments
-    parser.add_argument("--preserve_checkpoints_every", type=int, default=2000,
-                       help="Preserve checkpoints permanently every N steps (0 to disable)")
-    parser.add_argument("--preserve_checkpoints_dir", type=str, default="permanent_checkpoints",
-                       help="Directory name for preserved checkpoints within output_dir")
-    
-    return parser.parse_args()
-
-
-def setup_model_and_tokenizer(model_args: ModelConfig):
-    """Setup model and tokenizer."""
-    logger.info(f"Loading model: {model_args.model_name_or_path}")
+def setup_model_and_tokenizer(config: Config):
+    """Setup model and tokenizer from configuration."""
+    model_config = config.model
+    logger.info(f"Loading model: {model_config.name}")
     
     # Load tokenizer
     tokenizer = AutoTokenizer.from_pretrained(
-        model_args.model_name_or_path,
-        revision=model_args.model_revision,
-        trust_remote_code=model_args.trust_remote_code
+        model_config.name,
+        revision=model_config.revision,
+        trust_remote_code=model_config.trust_remote_code
     )
     
     # Ensure pad token is set
@@ -155,28 +63,33 @@ def setup_model_and_tokenizer(model_args: ModelConfig):
     
     # Set chat template for GRPO training
     if tokenizer.chat_template is None:
-        # Simple chat template for GRPO
         tokenizer.chat_template = "{% for message in messages %}{% if message['role'] == 'system' %}{{ message['content'] }}{% elif message['role'] == 'user' %}User: {{ message['content'] }}{% elif message['role'] == 'assistant' %}Assistant: {{ message['content'] }}{% endif %}{% if not loop.last %}\n{% endif %}{% endfor %}"
     
-    # Load model with optimized device placement
-    # For small models (0.5B, 3B): use single GPU to avoid communication overhead
-    # For large models (7B+): use auto for memory distribution
+    # Determine device mapping based on configuration
     device_map = None
     if torch.cuda.is_available():
-        # Check model size to determine optimal device placement
-        if "0.5B" in model_args.model_name_or_path or "1B" in model_args.model_name_or_path or "1.5B" in model_args.model_name_or_path or "3B" in model_args.model_name_or_path:
-            device_map = "cuda:0"  # Single GPU for models up to 3B (faster)
-            logger.info("Using single GPU (cuda:0) for small-medium model - optimized for speed")
-        else:
-            device_map = "auto"  # Multi-GPU for large models (memory efficiency)
-            logger.info("Using auto device mapping for large model - optimized for memory")
+        if config.model.device_placement == "single":
+            device_map = "cuda:0"
+            logger.info("Using single GPU (cuda:0) for model")
+        elif config.model.device_placement == "multi":
+            device_map = "auto"
+            logger.info("Using multi-GPU (auto) for model")
+        else:  # auto
+            # Auto-detect based on model size
+            if any(size in model_config.name for size in ["0.5B", "1B", "1.5B", "3B"]):
+                device_map = "cuda:0"
+                logger.info("Auto-detected: Using single GPU for small-medium model")
+            else:
+                device_map = "auto"
+                logger.info("Auto-detected: Using multi-GPU for large model")
     
+    # Load model
     model = AutoModelForCausalLM.from_pretrained(
-        model_args.model_name_or_path,
-        revision=model_args.model_revision,
-        torch_dtype=getattr(torch, model_args.torch_dtype) if model_args.torch_dtype else None,
-        trust_remote_code=model_args.trust_remote_code,
-        attn_implementation=model_args.attn_implementation,
+        model_config.name,
+        revision=model_config.revision,
+        torch_dtype=getattr(torch, model_config.torch_dtype) if model_config.torch_dtype else None,
+        trust_remote_code=model_config.trust_remote_code,
+        attn_implementation=model_config.attn_implementation,
         use_cache=False,
         device_map=device_map
     )
@@ -187,46 +100,176 @@ def setup_model_and_tokenizer(model_args: ModelConfig):
     return model, tokenizer
 
 
-def setup_datasets(dataset_name: str, dataset_subset: str = None, test_size: float = 0.1, split_seed: int = 42):
-    """Setup training and evaluation datasets with automatic train/test splitting."""
-    logger.info(f"Loading dataset: {dataset_name}")
+def setup_datasets(config: Config):
+    """Setup training and evaluation datasets from configuration."""
+    dataset_config = config.dataset
+    logger.info(f"Loading dataset: {dataset_config.name}")
     
     # Load datasets with automatic train/test split handling
     train_dataset, test_dataset = create_train_test_datasets(
-        dataset_name=dataset_name,
-        test_size=test_size,
-        split_seed=split_seed
+        dataset_name=dataset_config.name,
+        test_size=dataset_config.split.test_size,
+        split_seed=dataset_config.split.seed
     )
     
     logger.info(f"Training dataset size: {len(train_dataset)}")
     logger.info(f"Test dataset size: {len(test_dataset)}")
-    logger.info(f"Train/test split created with seed: {split_seed}")
+    logger.info(f"Train/test split created with seed: {dataset_config.split.seed}")
     
     return train_dataset, test_dataset
 
 
-def create_grpo_trainer(model, tokenizer, reward_functions, training_args, train_dataset, eval_dataset, callbacks, max_completion_length=512, generation_batch_size=32):
-    """
-    Create a real GRPOTrainer with optimized configuration for better performance.
-    Enhanced from tutorial specifications for L40S GPU.
-    """
-    logger.info("Creating optimized GRPOTrainer with performance enhancements...")
+def create_training_arguments(config: Config, output_dir: str):
+    """Create TrainingArguments from configuration."""
+    from transformers import TrainingArguments
     
-    # Create optimized GRPOConfig with performance enhancements
-    grpo_config = create_grpo_config(training_args, max_completion_length, generation_batch_size)
+    training_config = config.training
     
-    # Create GRPOTrainer (exactly as in tutorial)
-    grpo_trainer = GRPOTrainer(
-        model=model,                      # Our initialized model
-        reward_funcs=reward_functions,    # List of reward functions from previous step
-        args=grpo_config,                # GRPOConfig (created from TrainingArguments)
-        train_dataset=train_dataset,     # Training dataset
-        eval_dataset=eval_dataset,       # Evaluation dataset (optional)
-        processing_class=tokenizer,      # Pass tokenizer as processing_class
-        callbacks=callbacks              # List of callbacks
+    return TrainingArguments(
+        output_dir=output_dir,
+        overwrite_output_dir=False,
+        num_train_epochs=training_config.epochs,
+        per_device_train_batch_size=training_config.batch_size.per_device_train,
+        per_device_eval_batch_size=training_config.batch_size.per_device_eval,
+        gradient_accumulation_steps=training_config.batch_size.gradient_accumulation_steps,
+        learning_rate=training_config.optimization.learning_rate,
+        warmup_ratio=training_config.optimization.warmup_ratio,
+        weight_decay=training_config.optimization.weight_decay,
+        logging_steps=training_config.scheduling.logging_steps,
+        eval_strategy=training_config.scheduling.eval_strategy,
+        eval_steps=training_config.scheduling.eval_steps,
+        save_strategy=training_config.scheduling.save_strategy,
+        save_steps=training_config.scheduling.save_steps,
+        save_total_limit=training_config.scheduling.save_total_limit,
+        dataloader_num_workers=training_config.dataloader.num_workers,
+        dataloader_pin_memory=training_config.dataloader.pin_memory,
+        dataloader_persistent_workers=training_config.dataloader.persistent_workers,
+        dataloader_prefetch_factor=training_config.dataloader.prefetch_factor,
+        dataloader_drop_last=training_config.dataloader.drop_last,
+        seed=config.system.seed,
+        bf16=training_config.precision.bf16,
+        tf32=training_config.precision.tf32,
+        gradient_checkpointing=training_config.precision.gradient_checkpointing,
+        push_to_hub=False,
+        report_to="none",
+        remove_unused_columns=False,
+        group_by_length=training_config.dataloader.group_by_length,
+    )
+
+
+def create_grpo_config_from_config(config: Config, training_args):
+    """Create GRPOConfig from configuration."""
+    grpo_config_dict = training_args.to_dict()
+    grpo_settings = config.grpo
+    
+    # Add GRPO-specific settings
+    grpo_config_dict.update({
+        "max_completion_length": grpo_settings.max_completion_length,
+        "generation_batch_size": config.training.batch_size.generation_batch_size,
+        "num_generations": grpo_settings.num_generations,
+        "use_vllm": grpo_settings.vllm.enabled,
+        "vllm_mode": grpo_settings.vllm.mode,
+        "vllm_gpu_memory_utilization": grpo_settings.vllm.gpu_memory_utilization,
+        "use_liger_loss": grpo_settings.liger_loss,
+    })
+    
+    # Create GRPOConfig
+    try:
+        grpo_config = GRPOConfig(**grpo_config_dict, generation_kwargs={})
+    except TypeError:
+        # Fallback for older TRL versions
+        grpo_config = GRPOConfig(**grpo_config_dict)
+    
+    return grpo_config
+
+
+def get_reward_functions(config: Config):
+    """Get reward functions from configuration."""
+    rewards_config = config.rewards
+    
+    # Create script args object compatible with openr1_rewards
+    from src.config.grpo_config import GRPOScriptArguments
+    script_args = GRPOScriptArguments(
+        reward_funcs=rewards_config.functions,
+        cosine_min_value_wrong=rewards_config.cosine.min_value_wrong,
+        cosine_max_value_wrong=rewards_config.cosine.max_value_wrong,
+        cosine_min_value_correct=rewards_config.cosine.min_value_correct,
+        cosine_max_value_correct=rewards_config.cosine.max_value_correct,
+        cosine_max_len=rewards_config.cosine.max_len,
+        repetition_n_grams=rewards_config.repetition.n_grams,
+        repetition_max_penalty=rewards_config.repetition.max_penalty,
+        code_language=rewards_config.code.language,
+        max_completion_len=rewards_config.soft_punish.max_completion_len,
+        soft_punish_cache=rewards_config.soft_punish.cache,
     )
     
-    logger.info("✅ Real GRPOTrainer created successfully")
+    return get_reward_funcs(script_args)
+
+
+def get_callbacks(config: Config, training_args, delayed_dir_callback=None):
+    """Get callbacks from configuration."""
+    from src.config.grpo_config import (
+        ProductionLoggingCallback,
+        ComprehensiveLoggingCallback,
+        RewardTrendCallback,
+        CheckpointPreservationCallback,
+        GRPOScriptArguments
+    )
+    
+    callbacks = []
+    
+    # Create dummy script args for callbacks (backward compatibility)
+    script_args = GRPOScriptArguments(
+        reward_funcs=config.rewards.functions
+    )
+    
+    # Choose logging callback based on configuration
+    if config.monitoring.logging.profiling_mode or config.callbacks.comprehensive_logging.enabled:
+        callbacks.append(ComprehensiveLoggingCallback(
+            script_args, 
+            log_examples=config.callbacks.comprehensive_logging.log_examples
+        ))
+    else:
+        callbacks.append(ProductionLoggingCallback(script_args))
+    
+    # Add reward trend callback
+    callbacks.append(RewardTrendCallback(
+        window_size=config.callbacks.reward_trend.window_size
+    ))
+    
+    # Add delayed directory creation callback if provided
+    if delayed_dir_callback is not None:
+        callbacks.append(delayed_dir_callback)
+    
+    # Add checkpoint preservation callback if enabled
+    if config.callbacks.checkpoint_preservation.enabled:
+        callbacks.append(CheckpointPreservationCallback(
+            preserve_every_n_steps=config.callbacks.checkpoint_preservation.every_n_steps,
+            preserve_dir=config.callbacks.checkpoint_preservation.directory
+        ))
+    
+    return callbacks
+
+
+def create_grpo_trainer(config: Config, model, tokenizer, reward_functions, training_args, train_dataset, eval_dataset, callbacks):
+    """Create GRPOTrainer from configuration."""
+    logger.info("Creating GRPOTrainer with configuration...")
+    
+    # Create GRPOConfig
+    grpo_config = create_grpo_config_from_config(config, training_args)
+    
+    # Create GRPOTrainer
+    grpo_trainer = GRPOTrainer(
+        model=model,
+        reward_funcs=reward_functions,
+        args=grpo_config,
+        train_dataset=train_dataset,
+        eval_dataset=eval_dataset,
+        processing_class=tokenizer,
+        callbacks=callbacks
+    )
+    
+    logger.info("✅ GRPOTrainer created successfully")
     logger.info(f"   Model: {model.config.model_type}")
     logger.info(f"   Reward functions: {len(reward_functions)}")
     logger.info(f"   Callbacks: {len(callbacks)}")
@@ -237,22 +280,20 @@ def create_grpo_trainer(model, tokenizer, reward_functions, training_args, train
     return grpo_trainer
 
 
-def generate_unique_output_dir(model_name: str, reward_funcs: list) -> str:
-    """
-    Generate a unique output directory name with descriptive information.
-    
-    Format: saved_models/{model_size}_{reward_funcs}_{timestamp}
-    Example: saved_models/qwen2.5-0.5b_accuracy-format-reasoning_20250106_143022
-    """
+def generate_unique_output_dir(config: Config) -> str:
+    """Generate a unique output directory name from configuration."""
     import datetime
     import re
+    
+    model_name = config.model.name
+    reward_funcs = config.rewards.functions
     
     # Extract model size from model name
     model_size = "unknown"
     if "0.5B" in model_name:
         model_size = "qwen2.5-0.5b"
     elif "1B" in model_name:
-        model_size = "qwen2.5-1b" 
+        model_size = "qwen2.5-1b"
     elif "3B" in model_name:
         model_size = "qwen2.5-3b"
     elif "7B" in model_name:
@@ -264,12 +305,12 @@ def generate_unique_output_dir(model_name: str, reward_funcs: list) -> str:
         model_size = model_name.split('/')[-1].lower()
         model_size = re.sub(r'[^a-z0-9.-]', '-', model_size)
     
-    # Create reward function string (limit to avoid very long names)
+    # Create reward function string
     if len(reward_funcs) >= 4:
         reward_str = "all-rewards"
     else:
-        reward_str = "-".join(reward_funcs[:3])  # Take first 3 to avoid too long names
-        
+        reward_str = "-".join(reward_funcs[:3])
+    
     # Generate timestamp
     timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
     
@@ -279,187 +320,160 @@ def generate_unique_output_dir(model_name: str, reward_funcs: list) -> str:
     return output_dir
 
 
+def setup_monitoring(config: Config):
+    """Setup monitoring and logging from configuration."""
+    # Configure logging level
+    logging_config = config.monitoring.logging
+    logger.setLevel(getattr(logging, logging_config.level))
+    
+    # Setup wandb if enabled
+    if config.monitoring.wandb.enabled:
+        os.environ["WANDB_PROJECT"] = config.monitoring.wandb.project
+        if config.monitoring.wandb.run_name:
+            os.environ["WANDB_RUN_NAME"] = config.monitoring.wandb.run_name
+        return "wandb"
+    else:
+        return "none"
+
+
 def main():
-    """Main training function."""
-    args = parse_args()
-    
-    # Set seed
-    set_seed(args.seed)
-    
-    # Create configuration objects
-    script_args = GRPOScriptArguments(
-        reward_funcs=args.reward_funcs,
-        cosine_min_value_wrong=args.cosine_min_value_wrong,
-        cosine_max_value_wrong=args.cosine_max_value_wrong,
-        cosine_min_value_correct=args.cosine_min_value_correct,
-        cosine_max_value_correct=args.cosine_max_value_correct,
-        cosine_max_len=args.cosine_max_len,
-        repetition_n_grams=args.repetition_n_grams,
-        repetition_max_penalty=args.repetition_max_penalty
-    )
-    
-    model_args = ModelConfig(
-        model_name_or_path=args.model_name,
-        torch_dtype=args.torch_dtype,
-        trust_remote_code=args.trust_remote_code,
-        attn_implementation=args.attn_implementation
-    )
-    
-    # Generate unique output directory if not specified
-    if args.output_dir is None:
-        actual_output_dir = generate_unique_output_dir(args.model_name, args.reward_funcs)
-        logger.info(f"Generated unique output directory: {actual_output_dir}")
-    else:
-        actual_output_dir = args.output_dir
-    
-    # Use a temporary directory for initial training setup
-    import tempfile
-    temp_output_dir = tempfile.mkdtemp(prefix="grpo_temp_")
-    logger.info(f"Using temporary directory for initial setup: {temp_output_dir}")
-    
-    training_args = create_training_arguments(temp_output_dir)
-    
-    # Override training arguments with command line args
-    training_args.num_train_epochs = args.num_train_epochs
-    training_args.per_device_train_batch_size = args.per_device_train_batch_size
-    training_args.gradient_accumulation_steps = args.gradient_accumulation_steps
-    training_args.learning_rate = args.learning_rate
-    training_args.logging_steps = args.logging_steps
-    training_args.eval_steps = args.eval_steps
-    training_args.save_steps = args.save_steps
-    training_args.dataloader_num_workers = args.dataloader_num_workers
-    
-    # Fix dataloader settings for single-threaded optimization
-    if args.dataloader_num_workers == 0:
-        training_args.dataloader_persistent_workers = False  # Not applicable for single-threaded
-        training_args.dataloader_prefetch_factor = None     # Not applicable for single-threaded
-        training_args.dataloader_pin_memory = False         # Less beneficial for single-threaded
-        logger.info("Optimized dataloader settings for single-threaded (num_workers=0)")
-    elif args.dataloader_num_workers > 0:
-        training_args.dataloader_persistent_workers = True
-        training_args.dataloader_prefetch_factor = 4
-        training_args.dataloader_pin_memory = True
-        logger.info(f"Optimized dataloader settings for multi-threaded ({args.dataloader_num_workers} workers)")
-    
-    if not args.no_wandb:
-        training_args.report_to = "wandb"
-        os.environ["WANDB_PROJECT"] = args.wandb_project
-        if args.wandb_run_name:
-            os.environ["WANDB_RUN_NAME"] = args.wandb_run_name
-    
-    # Print configuration
-    logger.info("="*80)
-    logger.info("DEEPSEEK R1 ZERO GRPO TRAINING CONFIGURATION")
-    logger.info("="*80)
-    logger.info(f"Model: {model_args.model_name_or_path}")
-    logger.info(f"Dataset: {args.dataset_name}")
-    logger.info(f"Output Directory: {training_args.output_dir}")
-    logger.info(f"Reward Functions: {script_args.reward_funcs}")
-    logger.info(f"Learning Rate: {training_args.learning_rate}")
-    logger.info(f"Batch Size: {training_args.per_device_train_batch_size}")
-    logger.info(f"Epochs: {training_args.num_train_epochs}")
-    logger.info(f"Logging Steps: {training_args.logging_steps}")
-    logger.info(f"Seed: {args.seed}")
-    logger.info(f"Test Size: {args.test_size}")
-    logger.info(f"Split Seed: {args.split_seed}")
-    
-    # Checkpoint preservation info
-    if args.preserve_checkpoints_every > 0:
-        logger.info(f"Checkpoint Preservation: Every {args.preserve_checkpoints_every} steps")
-        logger.info(f"Preservation Directory: {args.preserve_checkpoints_dir}")
-    else:
-        logger.info("Checkpoint Preservation: Disabled")
-    
-    # GPU info
-    if torch.cuda.is_available():
-        logger.info(f"CUDA Device: {torch.cuda.get_device_name(0)}")
-        logger.info(f"GPU Memory: {torch.cuda.get_device_properties(0).total_memory / 1e9:.1f} GB")
-    else:
-        logger.info("CUDA not available - using CPU")
-    
-    logger.info("="*80)
-    
+    """Main training function with new configuration system."""
     try:
-        # Setup model and tokenizer
-        model, tokenizer = setup_model_and_tokenizer(model_args)
+        # Parse special arguments before creating config manager
+        config_file = "config.yaml"
+        profile = "default"
+        cli_args = sys.argv[1:]
         
-        # Setup datasets with automatic train/test split
-        train_dataset, test_dataset = setup_datasets(
-            args.dataset_name, 
-            args.dataset_subset,
-            args.test_size,
-            args.split_seed
+        # Extract --config and --profile from CLI args
+        filtered_args = []
+        i = 0
+        while i < len(cli_args):
+            arg = cli_args[i]
+            
+            if arg in ["--config", "--profile"]:
+                if i + 1 < len(cli_args):
+                    value = cli_args[i + 1]
+                    if arg == "--config":
+                        config_file = value
+                    elif arg == "--profile":
+                        profile = value
+                    i += 2
+                else:
+                    raise ValueError(f"Missing value for argument: {arg}")
+            else:
+                filtered_args.append(arg)
+                i += 1
+        
+        # Create configuration manager
+        config_manager = ConfigManager(
+            config_file=config_file,
+            profile=profile,
+            enable_legacy_compatibility=True
         )
         
-        # Use test dataset as eval dataset
+        # Load configuration with CLI overrides
+        config = config_manager.load_config(cli_args=filtered_args)
+        
+        # Set seed
+        set_seed(config.system.seed)
+        
+        # Setup monitoring
+        report_to = setup_monitoring(config)
+        
+        # Generate output directory if not specified
+        if config.system.output_dir is None:
+            actual_output_dir = generate_unique_output_dir(config)
+            logger.info(f"Generated unique output directory: {actual_output_dir}")
+        else:
+            actual_output_dir = config.system.output_dir
+        
+        # Create temporary directory for initial setup
+        import tempfile
+        temp_output_dir = tempfile.mkdtemp(prefix="grpo_temp_")
+        logger.info(f"Using temporary directory for initial setup: {temp_output_dir}")
+        
+        # Create training arguments
+        training_args = create_training_arguments(config, temp_output_dir)
+        training_args.report_to = report_to
+        
+        # Print configuration summary
+        config_manager.print_config(config)
+        
+        # Log GPU information
+        if torch.cuda.is_available():
+            logger.info(f"CUDA Device: {torch.cuda.get_device_name(0)}")
+            logger.info(f"GPU Memory: {torch.cuda.get_device_properties(0).total_memory / 1e9:.1f} GB")
+        else:
+            logger.info("CUDA not available - using CPU")
+        
+        logger.info("="*80)
+        
+        # Setup model and tokenizer
+        model, tokenizer = setup_model_and_tokenizer(config)
+        
+        # Setup datasets
+        train_dataset, test_dataset = setup_datasets(config)
         eval_dataset = test_dataset
         
         # Get reward functions
-        reward_functions = get_reward_functions(script_args)
+        reward_functions = get_reward_functions(config)
         logger.info(f"Initialized {len(reward_functions)} reward functions")
         
         # Create delayed directory creation callback
         from src.config.grpo_config import DelayedDirectoryCreationCallback
         delayed_dir_callback = DelayedDirectoryCreationCallback(actual_output_dir)
         
-        # Get comprehensive callbacks
-        callbacks = get_callbacks(
-            training_args, 
-            model_args, 
-            script_args, 
-            delayed_dir_callback, 
-            profiling_mode=False,
-            preserve_checkpoints_every=args.preserve_checkpoints_every,
-            preserve_checkpoints_dir=args.preserve_checkpoints_dir
-        )
-        logger.info(f"Initialized {len(callbacks)} comprehensive callbacks")
+        # Get callbacks
+        callbacks = get_callbacks(config, training_args, delayed_dir_callback)
+        logger.info(f"Initialized {len(callbacks)} callbacks")
         
-        # Create real GRPO trainer with optimized configuration
+        # Create GRPO trainer
         grpo_trainer = create_grpo_trainer(
+            config=config,
             model=model,
             tokenizer=tokenizer,
             reward_functions=reward_functions,
             training_args=training_args,
             train_dataset=train_dataset,
             eval_dataset=eval_dataset,
-            callbacks=callbacks,
-            max_completion_length=args.max_completion_length,
-            generation_batch_size=args.generation_batch_size
+            callbacks=callbacks
         )
         
-        # Start the GRPO Training Loop (exactly as in tutorial)
-        logger.info("🚀 Starting real GRPO training loop...")
+        # Start training
+        logger.info("🚀 Starting GRPO training...")
         train_result = grpo_trainer.train()
         
         logger.info("\n" + "="*80)
-        logger.info("🎉 REAL GRPO TRAINING COMPLETED SUCCESSFULLY!")
+        logger.info("🎉 GRPO TRAINING COMPLETED SUCCESSFULLY!")
         logger.info(f"💡 Training result: {train_result}")
-        logger.info("🚀 DeepSeek R1 Zero model trained with tutorial-exact GRPO")
+        logger.info("🚀 DeepSeek R1 Zero model trained with GRPO")
         logger.info("="*80)
         
+    except ValidationError as e:
+        logger.error(f"Configuration validation error: {e}")
+        sys.exit(1)
     except KeyboardInterrupt:
         logger.info("\nTraining interrupted by user")
-        # Clean up temporary directory if it still exists
+        # Clean up temporary directory if it exists
         import shutil
-        if os.path.exists(temp_output_dir):
+        if 'temp_output_dir' in locals() and os.path.exists(temp_output_dir):
             shutil.rmtree(temp_output_dir)
             logger.info(f"Cleaned up temporary directory: {temp_output_dir}")
-        
     except Exception as e:
-        logger.error(f"\nTraining failed with error: {e}")
+        logger.error(f"Training failed with error: {e}")
         import traceback
         traceback.print_exc()
-        # Clean up temporary directory if it still exists
+        # Clean up temporary directory if it exists
         import shutil
-        if os.path.exists(temp_output_dir):
+        if 'temp_output_dir' in locals() and os.path.exists(temp_output_dir):
             shutil.rmtree(temp_output_dir)
             logger.info(f"Cleaned up temporary directory: {temp_output_dir}")
         sys.exit(1)
-    
     finally:
-        # Clean up temporary directory if it still exists and wasn't moved
+        # Clean up temporary directory if it exists and wasn't moved
         import shutil
-        if os.path.exists(temp_output_dir) and temp_output_dir != actual_output_dir:
+        if 'temp_output_dir' in locals() and 'actual_output_dir' in locals() and \
+           os.path.exists(temp_output_dir) and temp_output_dir != actual_output_dir:
             shutil.rmtree(temp_output_dir)
             logger.info(f"Final cleanup of temporary directory: {temp_output_dir}")
 

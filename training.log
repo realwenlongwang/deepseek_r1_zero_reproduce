@@ -1,0 +1,120 @@
+2025-07-16 16:14:53,849 - src.config.manager - INFO - Loaded configuration from 'config.yaml'
+2025-07-16 16:14:53,849 - src.config.manager - INFO - Applying 1 CLI overrides
+2025-07-16 16:14:53,975 - __main__ - INFO - Generated unique output directory: saved_models/qwen2.5-0.5b_format-equation_20250716_161453
+2025-07-16 16:14:53,975 - __main__ - INFO - Using temporary directory for initial setup: /tmp/grpo_temp_yzl9wjgb
+2025-07-16 16:14:54,100 - __main__ - INFO - CUDA Device: NVIDIA H200
+2025-07-16 16:14:54,100 - __main__ - INFO - GPU Memory: 150.1 GB
+2025-07-16 16:14:54,100 - __main__ - INFO - ================================================================================
+2025-07-16 16:14:54,100 - __main__ - INFO - Loading model: Qwen/Qwen2.5-0.5B-Instruct
+2025-07-16 16:14:54,419 - __main__ - INFO - Auto-detected: Using single GPU for small-medium model
+2025-07-16 16:14:55,425 - __main__ - INFO - Model loaded: qwen2
+2025-07-16 16:14:55,426 - __main__ - INFO - Model parameters: 494,032,768
+2025-07-16 16:14:55,426 - __main__ - INFO - Loading dataset: Jiayi-Pan/Countdown-Tasks-3to4
+2025-07-16 16:15:28,279 - __main__ - INFO - 
+Training interrupted by user
+2025-07-16 16:15:28,279 - __main__ - INFO - Cleaned up temporary directory: /tmp/grpo_temp_yzl9wjgb
+2025-07-16 16:16:06,296 - src.config.manager - INFO - Loaded configuration from 'config.yaml'
+2025-07-16 16:16:06,296 - src.config.manager - INFO - Applying 1 CLI overrides
+2025-07-16 16:16:06,410 - __main__ - INFO - Generated unique output directory: saved_models/qwen2.5-0.5b_format-equation_20250716_161606
+2025-07-16 16:16:06,410 - __main__ - INFO - Using temporary directory for initial setup: /tmp/grpo_temp_zxgc5foq
+2025-07-16 16:16:06,557 - __main__ - INFO - CUDA Device: NVIDIA H200
+2025-07-16 16:16:06,557 - __main__ - INFO - GPU Memory: 150.1 GB
+2025-07-16 16:16:06,558 - __main__ - INFO - ================================================================================
+2025-07-16 16:16:06,558 - __main__ - INFO - Loading model: Qwen/Qwen2.5-0.5B-Instruct
+2025-07-16 16:16:06,866 - __main__ - INFO - Auto-detected: Using single GPU for small-medium model
+2025-07-16 16:16:07,605 - __main__ - INFO - Model loaded: qwen2
+2025-07-16 16:16:07,606 - __main__ - INFO - Model parameters: 494,032,768
+2025-07-16 16:16:07,606 - __main__ - INFO - Loading dataset: Jiayi-Pan/Countdown-Tasks-3to4
+2025-07-16 16:16:39,983 - __main__ - INFO - Training dataset size: 441327
+2025-07-16 16:16:39,983 - __main__ - INFO - Test dataset size: 49037
+2025-07-16 16:16:39,984 - __main__ - INFO - Train/test split created with seed: 42
+2025-07-16 16:16:39,984 - __main__ - ERROR - Training failed with error: TutorialRewardSystem.__init__() got an unexpected keyword argument 'reward_funcs'
+2025-07-16 16:16:39,985 - __main__ - INFO - Cleaned up temporary directory: /tmp/grpo_temp_zxgc5foq
+2025-07-16 16:22:10,720 - src.config.manager - INFO - Loaded configuration from 'config.yaml'
+2025-07-16 16:22:10,720 - __main__ - ERROR - Configuration validation error: Failed to parse CLI arguments: Missing value for argument: --help
+2025-07-16 16:24:13,348 - src.config.manager - INFO - Loaded configuration from 'config.yaml'
+2025-07-16 16:24:32,741 - src.config.manager - INFO - Loaded configuration from 'config.yaml'
+2025-07-16 16:24:32,741 - src.config.manager - INFO - Applying profile overrides for 'dev'
+2025-07-16 16:24:32,741 - src.config.manager - INFO - Applying 3 CLI overrides
+2025-07-16 16:24:32,867 - __main__ - INFO - Generated unique output directory: saved_models/qwen2.5-7b_accuracy-format_20250716_162432
+2025-07-16 16:24:32,867 - __main__ - INFO - Using temporary directory for initial setup: /tmp/grpo_temp_ctabl6ft
+2025-07-16 16:24:32,988 - __main__ - INFO - CUDA Device: NVIDIA H200
+2025-07-16 16:24:32,989 - __main__ - INFO - GPU Memory: 150.1 GB
+2025-07-16 16:24:32,989 - __main__ - INFO - ================================================================================
+2025-07-16 16:24:32,989 - __main__ - INFO - Loading model: Qwen/Qwen2.5-7B
+2025-07-16 16:24:33,650 - __main__ - INFO - Auto-detected: Using multi-GPU for large model
+2025-07-16 16:25:09,107 - src.config.manager - INFO - Loaded configuration from 'config.yaml'
+2025-07-16 16:25:09,107 - src.config.manager - INFO - Applying profile overrides for 'test'
+2025-07-16 16:25:09,107 - src.config.manager - INFO - Applying 3 CLI overrides
+2025-07-16 16:25:09,231 - __main__ - INFO - Generated unique output directory: saved_models/qwen2.5-0.5b_format_20250716_162509
+2025-07-16 16:25:09,232 - __main__ - INFO - Using temporary directory for initial setup: /tmp/grpo_temp_fh70djp7
+2025-07-16 16:25:09,357 - __main__ - INFO - CUDA Device: NVIDIA H200
+2025-07-16 16:25:09,358 - __main__ - INFO - GPU Memory: 150.1 GB
+2025-07-16 16:25:09,358 - __main__ - INFO - ================================================================================
+2025-07-16 16:25:09,358 - __main__ - INFO - Loading model: Qwen/Qwen2.5-0.5B-Instruct
+2025-07-16 16:25:09,659 - __main__ - INFO - Auto-detected: Using single GPU for small-medium model
+2025-07-16 16:25:10,629 - __main__ - INFO - Model loaded: qwen2
+2025-07-16 16:25:10,630 - __main__ - INFO - Model parameters: 494,032,768
+2025-07-16 16:25:10,630 - __main__ - INFO - Loading dataset: Jiayi-Pan/Countdown-Tasks-3to4
+2025-07-16 16:25:26,015 - src.config.manager - INFO - Loaded configuration from 'config.yaml'
+2025-07-16 16:25:26,016 - src.config.manager - INFO - Applying 5 CLI overrides
+2025-07-16 16:25:26,140 - __main__ - INFO - Generated unique output directory: saved_models/qwen2.5-0.5b_accuracy-format_20250716_162526
+2025-07-16 16:25:26,141 - __main__ - INFO - Using temporary directory for initial setup: /tmp/grpo_temp_xvw1oude
+2025-07-16 16:25:26,264 - __main__ - INFO - CUDA Device: NVIDIA H200
+2025-07-16 16:25:26,265 - __main__ - INFO - GPU Memory: 150.1 GB
+2025-07-16 16:25:26,265 - __main__ - INFO - ================================================================================
+2025-07-16 16:25:26,265 - __main__ - INFO - Loading model: Qwen/Qwen2.5-0.5B-Instruct
+2025-07-16 16:25:26,579 - __main__ - INFO - Auto-detected: Using single GPU for small-medium model
+2025-07-16 16:25:27,548 - __main__ - INFO - Model loaded: qwen2
+2025-07-16 16:25:27,549 - __main__ - INFO - Model parameters: 494,032,768
+2025-07-16 16:25:27,549 - __main__ - INFO - Loading dataset: Jiayi-Pan/Countdown-Tasks-3to4
+2025-07-16 16:27:39,362 - src.config.manager - INFO - Loaded configuration from 'config.yaml'
+2025-07-16 16:27:39,362 - src.config.manager - INFO - Applying profile overrides for 'test'
+2025-07-16 16:27:39,472 - __main__ - INFO - Generated unique output directory: saved_models/qwen2.5-0.5b_format_20250716_162739
+2025-07-16 16:27:39,473 - __main__ - INFO - Using temporary directory for initial setup: /tmp/grpo_temp_0nei031n
+2025-07-16 16:27:39,633 - __main__ - INFO - CUDA Device: NVIDIA H200
+2025-07-16 16:27:39,633 - __main__ - INFO - GPU Memory: 150.1 GB
+2025-07-16 16:27:39,633 - __main__ - INFO - ================================================================================
+2025-07-16 16:27:39,633 - __main__ - INFO - Loading model: Qwen/Qwen2.5-0.5B-Instruct
+2025-07-16 16:27:39,969 - __main__ - INFO - Auto-detected: Using single GPU for small-medium model
+2025-07-16 16:27:40,770 - __main__ - INFO - Model loaded: qwen2
+2025-07-16 16:27:40,771 - __main__ - INFO - Model parameters: 494,032,768
+2025-07-16 16:27:40,771 - __main__ - INFO - Loading dataset: Jiayi-Pan/Countdown-Tasks-3to4
+2025-07-16 16:28:15,858 - __main__ - INFO - Training dataset size: 465845
+2025-07-16 16:28:15,859 - __main__ - INFO - Test dataset size: 24519
+2025-07-16 16:28:15,859 - __main__ - INFO - Train/test split created with seed: 42
+2025-07-16 16:28:15,861 - __main__ - INFO - Initialized 1 reward functions
+2025-07-16 16:28:15,862 - __main__ - INFO - Initialized 3 callbacks
+2025-07-16 16:28:15,862 - __main__ - INFO - Creating GRPOTrainer with configuration...
+2025-07-16 16:28:16,109 - root - INFO - cc -pthread -Wsign-compare -Wunreachable-code -DNDEBUG -g -fwrapv -O3 -Wall -fPIC -fPIC -c /tmp/tmpgu5xwlqc/test.c -o /tmp/tmpgu5xwlqc/test.o
+2025-07-16 16:28:16,127 - root - INFO - cc -pthread /tmp/tmpgu5xwlqc/test.o -laio -o /tmp/tmpgu5xwlqc/a.out
+2025-07-16 16:28:16,314 - root - INFO - cc -pthread -Wsign-compare -Wunreachable-code -DNDEBUG -g -fwrapv -O3 -Wall -fPIC -fPIC -c /tmp/tmpvtca9rfi/test.c -o /tmp/tmpvtca9rfi/test.o
+2025-07-16 16:28:16,334 - root - INFO - cc -pthread /tmp/tmpvtca9rfi/test.o -L/usr/local/cuda-12.8 -L/usr/local/cuda-12.8/lib64 -lcufile -o /tmp/tmpvtca9rfi/a.out
+2025-07-16 16:28:16,373 - root - INFO - cc -pthread -Wsign-compare -Wunreachable-code -DNDEBUG -g -fwrapv -O3 -Wall -fPIC -fPIC -c /tmp/tmphx955j4f/test.c -o /tmp/tmphx955j4f/test.o
+2025-07-16 16:28:16,391 - root - INFO - cc -pthread /tmp/tmphx955j4f/test.o -laio -o /tmp/tmphx955j4f/a.out
+2025-07-16 16:29:33,995 - __main__ - INFO - ✅ GRPOTrainer created successfully
+2025-07-16 16:29:33,995 - __main__ - INFO -    Model: qwen2
+2025-07-16 16:29:33,995 - __main__ - INFO -    Reward functions: 1
+2025-07-16 16:29:33,995 - __main__ - INFO -    Callbacks: 3
+2025-07-16 16:29:33,995 - __main__ - INFO -    Training dataset size: 465845
+2025-07-16 16:29:33,995 - __main__ - INFO -    Evaluation dataset size: 24519
+2025-07-16 16:29:33,995 - __main__ - INFO - 🚀 Starting GRPO training...
+2025-07-16 16:29:43,401 - src.config.grpo_config - INFO - GPU Memory: 55.79GB
+2025-07-16 16:29:43,568 - src.config.grpo_config - INFO - Step    2 | Loss: 0.0000 | LR: 0.00e+00 | Epoch: 0.00
+2025-07-16 16:29:43,569 - src.config.grpo_config - INFO - GPU Memory: 57.59GB
+2025-07-16 16:29:43,713 - src.config.grpo_config - INFO - Step    3 | Loss: 0.0000 | LR: 1.07e-07 | Epoch: 0.00
+2025-07-16 16:29:43,713 - src.config.grpo_config - INFO - GPU Memory: 57.68GB
+2025-07-16 16:29:43,851 - src.config.grpo_config - INFO - Step    4 | Loss: 0.0000 | LR: 2.15e-07 | Epoch: 0.00
+2025-07-16 16:29:43,852 - src.config.grpo_config - INFO - GPU Memory: 57.68GB
+2025-07-16 16:29:51,131 - src.config.grpo_config - INFO - Step    5 | Loss: 0.0000 | LR: 3.22e-07 | Epoch: 0.00
+2025-07-16 16:29:51,131 - src.config.grpo_config - INFO - GPU Memory: 57.68GB
+2025-07-16 16:29:51,266 - src.config.grpo_config - INFO - Step    6 | Loss: 0.0000 | LR: 4.29e-07 | Epoch: 0.00
+2025-07-16 16:29:51,266 - src.config.grpo_config - INFO - GPU Memory: 57.68GB
+2025-07-16 16:29:51,402 - src.config.grpo_config - INFO - Step    7 | Loss: 0.0000 | LR: 5.36e-07 | Epoch: 0.00
+2025-07-16 16:29:51,403 - src.config.grpo_config - INFO - GPU Memory: 57.68GB
+2025-07-16 16:29:51,537 - src.config.grpo_config - INFO - Step    8 | Loss: 0.0000 | LR: 6.44e-07 | Epoch: 0.00
+2025-07-16 16:29:51,538 - src.config.grpo_config - INFO - GPU Memory: 57.68GB
+2025-07-16 16:29:54,388 - __main__ - INFO - 
+Training interrupted by user
+2025-07-16 16:29:54,389 - __main__ - INFO - Cleaned up temporary directory: /tmp/grpo_temp_0nei031n
+2025-07-16 16:38:44,736 - src.config.manager - INFO - Loaded configuration from 'config.yaml'
