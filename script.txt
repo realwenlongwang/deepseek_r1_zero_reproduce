@@ -15,5 +15,6 @@
       --learning_rate 5e-5 \
       --logging_steps 5 \
       --dataloader_num_workers 0 \
+      --no_wandb
       --wandb_project "deepseek-r1-zero-grpo" \
       --wandb_run_name "qwen2.5-3b-1024tokens-colocate-countdown"

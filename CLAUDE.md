@@ -22,6 +22,9 @@ uv run train_grpo.py \
 
 # Test training functionality
 uv run train_grpo.py --no_wandb --reward_funcs accuracy format reasoning_steps
+
+# Training with custom train/test split parameters
+uv run train_grpo.py --no_wandb --reward_funcs accuracy format reasoning_steps --test_size 0.2 --split_seed 123
 ```
 
 ### Testing
@@ -61,6 +64,45 @@ ls saved_models/
 uv run python test_inference.py --checkpoint_path "saved_models/qwen2.5-0.5b_accuracy-format-reasoning_steps_20250106_143022/checkpoint-100"
 ```
 
+#### Checkpoint Preservation Feature
+The training script now supports preserving checkpoints at specified intervals permanently, while maintaining the normal cleanup behavior for regular checkpoints.
+
+```bash
+# Default: Preserve checkpoints every 2000 steps
+uv run train_grpo.py --reward_funcs accuracy format reasoning_steps
+
+# Custom preservation interval (e.g., every 1000 steps)
+uv run train_grpo.py --preserve_checkpoints_every 1000 --reward_funcs accuracy format reasoning_steps
+
+# Disable checkpoint preservation
+uv run train_grpo.py --preserve_checkpoints_every 0 --reward_funcs accuracy format reasoning_steps
+
+# Custom permanent checkpoint directory name
+uv run train_grpo.py --preserve_checkpoints_dir "milestone_checkpoints" --reward_funcs accuracy format reasoning_steps
+```
+
+**How it works:**
+- **Regular checkpoints**: Saved every 50 steps (configurable with `--save_steps`), only last 2 kept due to `save_total_limit=2`
+- **Preserved checkpoints**: At specified intervals (default: every 2000 steps), checkpoints are copied to `permanent_checkpoints/` directory
+- **Final structure**: You get the latest 2 checkpoints + all milestone checkpoints preserved permanently
+
+**Example with default settings:**
+```
+output_directory/
+├── checkpoint-4950/          # Latest checkpoint (kept)
+├── checkpoint-5000/          # Latest checkpoint (kept)
+├── permanent_checkpoints/
+│   ├── checkpoint-2000/      # Preserved permanently
+│   ├── checkpoint-4000/      # Preserved permanently
+│   └── checkpoint-6000/      # Preserved permanently (if training continues)
+```
+
+**Disk Space Considerations:**
+- Each checkpoint is approximately 2-4GB for typical models
+- Preserved checkpoints accumulate over time (not cleaned up)
+- Monitor disk usage during long training runs
+- Consider using `--preserve_checkpoints_every 0` to disable if disk space is limited
+
 ## Architecture
 
 ### Core Components
@@ -83,6 +125,7 @@ uv run python test_inference.py --checkpoint_path "saved_models/qwen2.5-0.5b_acc
 4. **src/data/dataset.py**: Dataset processing
    - Supports NuminaMath-TIR and custom datasets
    - Converts to conversation format required by TRL
+   - Automatic train/test split creation with fixed seed for reproducibility
 
 ### Critical Implementation Details
 
@@ -100,6 +143,15 @@ uv run python test_inference.py --checkpoint_path "saved_models/qwen2.5-0.5b_acc
 - Qwen2.5-0.5B (494M parameters): Recommended for development/testing
 - Qwen2.5-7B-Instruct (7.6B parameters): Full-scale training but requires more GPU memory
 - Both models are stored locally in `./models/` directory
+
+#### Train/Test Split Management
+- **Automatic splitting**: Datasets without existing test splits are automatically split
+- **Fixed seed**: `42` ensures reproducible train/test splits across runs
+- **Split ratio**: Default 10% test, 90% train (configurable with `--test_size`)
+- **Dataset compatibility**: Works with both datasets that have existing splits and those that don't
+- **Examples**:
+  - `AI-MO/NuminaMath-TIR`: Uses existing train/test splits
+  - `Jiayi-Pan/Countdown-Tasks-3to4`: Creates 10% test split from train data with seed 42
 
 ### Expected Output Format
 The model should generate responses in this structure:

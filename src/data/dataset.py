@@ -91,19 +91,30 @@ class ReasoningDataset:
         dataset_name: str = "Jiayi-Pan/Countdown-Tasks-3to4",
         split: str = "train",
         max_length: int = 2048,
-        tokenizer: Optional[PreTrainedTokenizer] = None
+        tokenizer: Optional[PreTrainedTokenizer] = None,
+        create_splits: bool = True,
+        test_size: float = 0.1,
+        split_seed: int = 42
     ):
         self.dataset_name = dataset_name
         self.split = split
         self.max_length = max_length
         self.tokenizer = tokenizer
+        self.create_splits = create_splits
+        self.test_size = test_size
+        self.split_seed = split_seed
         
         # Load and preprocess the dataset
         self.dataset = self._load_and_preprocess()
     
     def _load_and_preprocess(self) -> Dataset:
         """Load and preprocess the dataset based on its type."""
-        raw_dataset = load_dataset(self.dataset_name, split=self.split)
+        # If create_splits is False, use the requested split directly
+        if not self.create_splits:
+            raw_dataset = load_dataset(self.dataset_name, split=self.split)
+        else:
+            # Check if dataset has existing test split
+            raw_dataset = self._get_dataset_with_splits()
         
         processed_data = []
         
@@ -126,6 +137,47 @@ class ReasoningDataset:
                     processed_data.append(processed_item)
         
         return Dataset.from_list(processed_data)
+    
+    def _get_dataset_with_splits(self) -> Dataset:
+        """Get dataset with proper train/test split handling."""
+        # Check if dataset has existing test split
+        has_test_split = self._check_test_split_exists()
+        
+        if has_test_split:
+            # Use existing splits
+            raw_dataset = load_dataset(self.dataset_name, split=self.split)
+        else:
+            # Create splits from train data
+            if self.split == "train":
+                # Load full train dataset and create train/test split
+                full_dataset = load_dataset(self.dataset_name, split="train")
+                split_dataset = full_dataset.train_test_split(
+                    test_size=self.test_size, 
+                    seed=self.split_seed
+                )
+                raw_dataset = split_dataset["train"]
+            elif self.split == "test":
+                # Load full train dataset and create train/test split  
+                full_dataset = load_dataset(self.dataset_name, split="train")
+                split_dataset = full_dataset.train_test_split(
+                    test_size=self.test_size, 
+                    seed=self.split_seed
+                )
+                raw_dataset = split_dataset["test"]
+            else:
+                # Fall back to original behavior for other splits
+                raw_dataset = load_dataset(self.dataset_name, split=self.split)
+        
+        return raw_dataset
+    
+    def _check_test_split_exists(self) -> bool:
+        """Check if dataset has an existing test split."""
+        try:
+            # Try to load test split to see if it exists
+            test_dataset = load_dataset(self.dataset_name, split="test")
+            return True
+        except Exception:
+            return False
     
     def _process_bespoke_item(self, item: Dict) -> Optional[Dict]:
         """Process Bespoke-Stratos dataset items."""
@@ -279,12 +331,48 @@ def create_dataset(
     dataset_name: str = "Jiayi-Pan/Countdown-Tasks-3to4",
     split: str = "train",
     max_length: int = 2048,
-    tokenizer: Optional[PreTrainedTokenizer] = None
+    tokenizer: Optional[PreTrainedTokenizer] = None,
+    create_splits: bool = True,
+    test_size: float = 0.1,
+    split_seed: int = 42
 ) -> ReasoningDataset:
     """Create a reasoning dataset."""
     return ReasoningDataset(
         dataset_name=dataset_name,
         split=split,
         max_length=max_length,
-        tokenizer=tokenizer
+        tokenizer=tokenizer,
+        create_splits=create_splits,
+        test_size=test_size,
+        split_seed=split_seed
     )
+
+def create_train_test_datasets(
+    dataset_name: str = "Jiayi-Pan/Countdown-Tasks-3to4",
+    max_length: int = 2048,
+    tokenizer: Optional[PreTrainedTokenizer] = None,
+    test_size: float = 0.1,
+    split_seed: int = 42
+) -> Tuple[ReasoningDataset, ReasoningDataset]:
+    """Create both train and test datasets with proper splitting."""
+    train_dataset = create_dataset(
+        dataset_name=dataset_name,
+        split="train",
+        max_length=max_length,
+        tokenizer=tokenizer,
+        create_splits=True,
+        test_size=test_size,
+        split_seed=split_seed
+    )
+    
+    test_dataset = create_dataset(
+        dataset_name=dataset_name,
+        split="test",
+        max_length=max_length,
+        tokenizer=tokenizer,
+        create_splits=True,
+        test_size=test_size,
+        split_seed=split_seed
+    )
+    
+    return train_dataset, test_dataset

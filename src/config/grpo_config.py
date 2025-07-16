@@ -625,13 +625,107 @@ class DelayedDirectoryCreationCallback(TrainerCallback):
             self.directory_created = True
 
 
-def get_callbacks(training_args: TrainingArguments, model_args: ModelConfig, script_args: GRPOScriptArguments, delayed_dir_callback=None, profiling_mode=False):
+class CheckpointPreservationCallback(TrainerCallback):
+    """
+    Callback that preserves checkpoints at specified intervals permanently.
+    
+    This callback works alongside the standard save_total_limit mechanism:
+    - Regular checkpoints are saved and cleaned up normally (only last N kept)
+    - Checkpoints at preserve_every_n_steps intervals are copied to permanent storage
+    - Permanent checkpoints are never cleaned up by save_total_limit
+    
+    Example:
+        With save_steps=50, save_total_limit=2, preserve_every_n_steps=2000:
+        - Steps 50, 100, 150, ... are saved normally, only last 2 kept
+        - Steps 2000, 4000, 6000, ... are saved normally AND copied to permanent_checkpoints/
+        - Final state: latest 2 checkpoints + all 2000-step interval checkpoints preserved
+    """
+    
+    def __init__(self, preserve_every_n_steps: int = 2000, preserve_dir: str = "permanent_checkpoints"):
+        self.preserve_every_n_steps = preserve_every_n_steps
+        self.preserve_dir = preserve_dir
+        self.preserved_checkpoints = []
+        
+    def on_save(self, args: TrainingArguments, state: TrainerState, control: TrainerControl, **kwargs):
+        """Preserve checkpoints at specified intervals."""
+        # Only preserve if this step is at the specified interval and preservation is enabled
+        if self.preserve_every_n_steps > 0 and state.global_step % self.preserve_every_n_steps == 0:
+            self._preserve_checkpoint(args, state)
+    
+    def _preserve_checkpoint(self, args: TrainingArguments, state: TrainerState):
+        """Copy the current checkpoint to permanent storage."""
+        import os
+        import shutil
+        
+        try:
+            # Determine the current checkpoint directory
+            checkpoint_dir = f"checkpoint-{state.global_step}"
+            src_checkpoint_path = os.path.join(args.output_dir, checkpoint_dir)
+            
+            # Create permanent checkpoints directory if it doesn't exist
+            permanent_dir = os.path.join(args.output_dir, self.preserve_dir)
+            os.makedirs(permanent_dir, exist_ok=True)
+            
+            # Destination path for permanent checkpoint
+            dst_checkpoint_path = os.path.join(permanent_dir, checkpoint_dir)
+            
+            # Only copy if the source checkpoint exists and destination doesn't
+            if os.path.exists(src_checkpoint_path) and not os.path.exists(dst_checkpoint_path):
+                # Copy the entire checkpoint directory
+                shutil.copytree(src_checkpoint_path, dst_checkpoint_path)
+                
+                # Track preserved checkpoints
+                self.preserved_checkpoints.append(state.global_step)
+                
+                # Calculate approximate size for logging
+                size_mb = self._get_directory_size(dst_checkpoint_path) / (1024 * 1024)
+                
+                logger.info(f"🔒 Preserved checkpoint-{state.global_step} permanently "
+                           f"({size_mb:.1f} MB) -> {dst_checkpoint_path}")
+                logger.info(f"📊 Total preserved checkpoints: {len(self.preserved_checkpoints)} "
+                           f"(steps: {self.preserved_checkpoints})")
+                
+        except Exception as e:
+            logger.error(f"Failed to preserve checkpoint at step {state.global_step}: {e}")
+            # Don't raise the exception to avoid disrupting training
+    
+    def _get_directory_size(self, directory_path: str) -> int:
+        """Calculate the total size of a directory in bytes."""
+        import os
+        total_size = 0
+        try:
+            for dirpath, dirnames, filenames in os.walk(directory_path):
+                for filename in filenames:
+                    filepath = os.path.join(dirpath, filename)
+                    if os.path.exists(filepath):
+                        total_size += os.path.getsize(filepath)
+        except Exception:
+            pass  # Return 0 if there's any error
+        return total_size
+    
+    def on_train_end(self, args: TrainingArguments, state: TrainerState, control: TrainerControl, **kwargs):
+        """Log summary of preserved checkpoints at the end of training."""
+        if self.preserved_checkpoints:
+            logger.info("="*80)
+            logger.info("🔒 CHECKPOINT PRESERVATION SUMMARY")
+            logger.info("="*80)
+            logger.info(f"Total preserved checkpoints: {len(self.preserved_checkpoints)}")
+            logger.info(f"Preserved steps: {self.preserved_checkpoints}")
+            logger.info(f"Preservation interval: every {self.preserve_every_n_steps} steps")
+            logger.info(f"Permanent location: {args.output_dir}/{self.preserve_dir}/")
+            logger.info("="*80)
+
+
+def get_callbacks(training_args: TrainingArguments, model_args: ModelConfig, script_args: GRPOScriptArguments, delayed_dir_callback=None, profiling_mode=False, preserve_checkpoints_every=2000, preserve_checkpoints_dir="permanent_checkpoints"):
     """
     Returns a list of callbacks for GRPO training monitoring.
     
     Args:
         profiling_mode: If True, uses ComprehensiveLoggingCallback with heavy profiling.
                        If False, uses ProductionLoggingCallback with minimal overhead.
+        preserve_checkpoints_every: Interval (in steps) to preserve checkpoints permanently.
+                                   Set to 0 to disable checkpoint preservation.
+        preserve_checkpoints_dir: Directory name for preserved checkpoints within output_dir.
     """
     if profiling_mode:
         # Heavy profiling with accurate GPU timing - for profiling script only
@@ -649,5 +743,14 @@ def get_callbacks(training_args: TrainingArguments, model_args: ModelConfig, scr
     # Add delayed directory creation callback if provided
     if delayed_dir_callback is not None:
         callbacks.append(delayed_dir_callback)
+    
+    # Add checkpoint preservation callback if enabled
+    if preserve_checkpoints_every > 0:
+        checkpoint_preservation_callback = CheckpointPreservationCallback(
+            preserve_every_n_steps=preserve_checkpoints_every,
+            preserve_dir=preserve_checkpoints_dir
+        )
+        callbacks.append(checkpoint_preservation_callback)
+        logger.info(f"🔒 Checkpoint preservation enabled: every {preserve_checkpoints_every} steps -> {preserve_checkpoints_dir}/")
     
     return callbacks

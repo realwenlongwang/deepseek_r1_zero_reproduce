@@ -37,7 +37,7 @@ from src.config.grpo_config import (
     get_reward_functions,
     get_callbacks
 )
-from src.data.dataset import create_dataset
+from src.data.dataset import create_dataset, create_train_test_datasets
 from src.rewards.tutorial_rewards import TutorialRewardSystem
 
 # Set up logging
@@ -71,6 +71,10 @@ def parse_args():
                        help="Dataset name")
     parser.add_argument("--dataset_subset", type=str, default=None,
                        help="Dataset subset")
+    parser.add_argument("--test_size", type=float, default=0.1,
+                       help="Test split size (default: 0.1 = 10%)")
+    parser.add_argument("--split_seed", type=int, default=42,
+                       help="Random seed for train/test split")
     
     # Training arguments
     parser.add_argument("--output_dir", type=str, default=None,
@@ -125,6 +129,12 @@ def parse_args():
     parser.add_argument("--no_wandb", action="store_true",
                        help="Disable Weights & Biases")
     
+    # Checkpoint preservation arguments
+    parser.add_argument("--preserve_checkpoints_every", type=int, default=2000,
+                       help="Preserve checkpoints permanently every N steps (0 to disable)")
+    parser.add_argument("--preserve_checkpoints_dir", type=str, default="permanent_checkpoints",
+                       help="Directory name for preserved checkpoints within output_dir")
+    
     return parser.parse_args()
 
 
@@ -177,19 +187,22 @@ def setup_model_and_tokenizer(model_args: ModelConfig):
     return model, tokenizer
 
 
-def setup_datasets(dataset_name: str, dataset_subset: str = None):
-    """Setup training datasets."""
+def setup_datasets(dataset_name: str, dataset_subset: str = None, test_size: float = 0.1, split_seed: int = 42):
+    """Setup training and evaluation datasets with automatic train/test splitting."""
     logger.info(f"Loading dataset: {dataset_name}")
     
-    # Load dataset using existing implementation
-    train_dataset = create_dataset(
+    # Load datasets with automatic train/test split handling
+    train_dataset, test_dataset = create_train_test_datasets(
         dataset_name=dataset_name,
-        split="train"
+        test_size=test_size,
+        split_seed=split_seed
     )
     
     logger.info(f"Training dataset size: {len(train_dataset)}")
+    logger.info(f"Test dataset size: {len(test_dataset)}")
+    logger.info(f"Train/test split created with seed: {split_seed}")
     
-    return train_dataset
+    return train_dataset, test_dataset
 
 
 def create_grpo_trainer(model, tokenizer, reward_functions, training_args, train_dataset, eval_dataset, callbacks, max_completion_length=512, generation_batch_size=32):
@@ -347,6 +360,15 @@ def main():
     logger.info(f"Epochs: {training_args.num_train_epochs}")
     logger.info(f"Logging Steps: {training_args.logging_steps}")
     logger.info(f"Seed: {args.seed}")
+    logger.info(f"Test Size: {args.test_size}")
+    logger.info(f"Split Seed: {args.split_seed}")
+    
+    # Checkpoint preservation info
+    if args.preserve_checkpoints_every > 0:
+        logger.info(f"Checkpoint Preservation: Every {args.preserve_checkpoints_every} steps")
+        logger.info(f"Preservation Directory: {args.preserve_checkpoints_dir}")
+    else:
+        logger.info("Checkpoint Preservation: Disabled")
     
     # GPU info
     if torch.cuda.is_available():
@@ -361,11 +383,16 @@ def main():
         # Setup model and tokenizer
         model, tokenizer = setup_model_and_tokenizer(model_args)
         
-        # Setup datasets
-        train_dataset = setup_datasets(args.dataset_name, args.dataset_subset)
+        # Setup datasets with automatic train/test split
+        train_dataset, test_dataset = setup_datasets(
+            args.dataset_name, 
+            args.dataset_subset,
+            args.test_size,
+            args.split_seed
+        )
         
-        # Create eval dataset (use a small subset of train for quick evaluation)
-        eval_dataset = None  # Can be added later if needed
+        # Use test dataset as eval dataset
+        eval_dataset = test_dataset
         
         # Get reward functions
         reward_functions = get_reward_functions(script_args)
@@ -376,7 +403,15 @@ def main():
         delayed_dir_callback = DelayedDirectoryCreationCallback(actual_output_dir)
         
         # Get comprehensive callbacks
-        callbacks = get_callbacks(training_args, model_args, script_args, delayed_dir_callback, profiling_mode=False)
+        callbacks = get_callbacks(
+            training_args, 
+            model_args, 
+            script_args, 
+            delayed_dir_callback, 
+            profiling_mode=False,
+            preserve_checkpoints_every=args.preserve_checkpoints_every,
+            preserve_checkpoints_dir=args.preserve_checkpoints_dir
+        )
         logger.info(f"Initialized {len(callbacks)} comprehensive callbacks")
         
         # Create real GRPO trainer with optimized configuration
