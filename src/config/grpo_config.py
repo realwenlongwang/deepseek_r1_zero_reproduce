@@ -215,8 +215,7 @@ class ProductionLoggingCallback(TrainerCallback):
         value_loss = latest_log.get('value_loss', None)
         entropy_loss = latest_log.get('entropy_loss', None)
         
-        logger.info(f"Step {state.global_step:4d} | "
-                   f"Loss: {loss:.4f} | "
+        logger.info(f"Loss: {loss:.4f} | "
                    f"LR: {lr:.2e} | "
                    f"Epoch: {state.epoch:.2f}")
         
@@ -314,8 +313,7 @@ class ComprehensiveLoggingCallback(TrainerCallback):
         value_loss = latest_log.get('value_loss', None)
         entropy_loss = latest_log.get('entropy_loss', None)
         
-        logger.info(f"Step {state.global_step:4d} | "
-                   f"Loss: {loss:.4f} | "
+        logger.info(f"Loss: {loss:.4f} | "
                    f"LR: {lr:.2e} | "
                    f"Epoch: {state.epoch:.2f}")
         

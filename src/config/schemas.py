@@ -17,6 +17,29 @@ class ProjectConfig:
 
 
 @dataclass
+class UnslothConfig:
+    """Unsloth FastLanguageModel configuration."""
+    enabled: bool = False
+    load_in_4bit: bool = True
+    fast_inference: bool = True
+    gpu_memory_utilization: float = 0.5
+
+
+@dataclass
+class LoRAConfig:
+    """LoRA PEFT configuration."""
+    enabled: bool = False
+    rank: int = 16
+    alpha: int = 16
+    target_modules: List[str] = field(default_factory=lambda: [
+        "q_proj", "k_proj", "v_proj", "o_proj", 
+        "gate_proj", "up_proj", "down_proj"
+    ])
+    use_gradient_checkpointing: str = "unsloth"
+    random_state: int = 3407
+
+
+@dataclass
 class ModelConfig:
     """Model configuration."""
     name: str = "Qwen/Qwen2.5-0.5B-Instruct"
@@ -25,6 +48,8 @@ class ModelConfig:
     trust_remote_code: bool = True
     attn_implementation: str = "flash_attention_2"
     device_placement: str = "auto"  # auto, single, multi
+    unsloth: UnslothConfig = field(default_factory=UnslothConfig)
+    lora: LoRAConfig = field(default_factory=LoRAConfig)
 
 
 @dataclass
@@ -50,6 +75,7 @@ class PrecisionConfig:
     bf16: bool = True
     tf32: bool = True
     gradient_checkpointing: bool = False
+    torch_compile: bool = False
 
 
 @dataclass
@@ -75,20 +101,53 @@ class DataloaderConfig:
 
 
 @dataclass
-class TrainingConfig:
-    """Training configuration."""
-    epochs: float = 1.0
-    batch_size: BatchSizeConfig = field(default_factory=BatchSizeConfig)
-    optimization: OptimizationConfig = field(default_factory=OptimizationConfig)
-    precision: PrecisionConfig = field(default_factory=PrecisionConfig)
-    scheduling: SchedulingConfig = field(default_factory=SchedulingConfig)
-    dataloader: DataloaderConfig = field(default_factory=DataloaderConfig)
+class TrainingArgumentsConfig:
+    """Training Arguments configuration - exact parameter names from transformers.TrainingArguments."""
+    output_dir: Optional[str] = None
+    overwrite_output_dir: bool = False
+    num_train_epochs: float = 1.0
+    max_steps: int = -1
+    per_device_train_batch_size: int = 8
+    per_device_eval_batch_size: int = 16
+    gradient_accumulation_steps: int = 1
+    learning_rate: float = 5e-5
+    warmup_ratio: float = 0.1
+    weight_decay: float = 0.01
+    logging_steps: int = 10
+    eval_strategy: str = "steps"
+    eval_steps: int = 100
+    save_strategy: str = "steps"
+    save_steps: int = 50
+    save_total_limit: int = 2
+    dataloader_num_workers: int = 0
+    dataloader_pin_memory: bool = False
+    dataloader_persistent_workers: bool = False
+    dataloader_prefetch_factor: int = 2
+    dataloader_drop_last: bool = True
+    seed: int = 42
+    bf16: bool = True
+    tf32: bool = True
+    gradient_checkpointing: bool = False
+    push_to_hub: bool = False
+    report_to: str = "none"
+    remove_unused_columns: bool = False
+    group_by_length: bool = True
+    torch_compile: bool = False
+    
+    # Optimizer configuration
+    optim: str = "adamw_torch"
+    adam_beta1: float = 0.9
+    adam_beta2: float = 0.999
+    max_grad_norm: float = 1.0
+    
+    # Learning rate scheduler
+    lr_scheduler_type: str = "linear"
 
 
 @dataclass
 class DatasetSplitConfig:
     """Dataset split configuration."""
-    test_size: float = 0.1
+    test_size: int = 128
     seed: int = 42
 
 
@@ -117,12 +176,18 @@ class VLLMConfig:
 
 
 @dataclass
-class GRPOConfig:
-    """GRPO-specific configuration."""
+class GRPOConfigConfig:
+    """GRPO configuration - additional parameters beyond TrainingArguments."""
+    max_prompt_length: int = 256
+    max_completion_length: int = 1024
     num_generations: int = 8
-    max_completion_length: int = 512
-    vllm: VLLMConfig = field(default_factory=VLLMConfig)
-    liger_loss: bool = False
+    use_vllm: bool = False
+    vllm_mode: str = "colocate"
+    vllm_gpu_memory_utilization: float = 0.3
+    use_liger_loss: bool = False
+    log_completions: bool = True
+    wandb_log_unique_prompts: bool = True
+    ddp_find_unused_parameters: bool = False
 
 
 @dataclass
@@ -168,8 +233,8 @@ class RewardsConfig:
 @dataclass
 class SystemConfig:
     """System configuration."""
-    seed: int = 42
     output_dir: Optional[str] = None  # auto-generated if None
+    resume_from_checkpoint: Optional[str] = None  # path to checkpoint directory to resume from
 
 
 @dataclass
@@ -235,9 +300,9 @@ class Config:
     """Complete configuration schema."""
     project: ProjectConfig = field(default_factory=ProjectConfig)
     model: ModelConfig = field(default_factory=ModelConfig)
-    training: TrainingConfig = field(default_factory=TrainingConfig)
+    TrainingArguments: TrainingArgumentsConfig = field(default_factory=TrainingArgumentsConfig)
     dataset: DatasetConfig = field(default_factory=DatasetConfig)
-    grpo: GRPOConfig = field(default_factory=GRPOConfig)
+    GRPOConfig: GRPOConfigConfig = field(default_factory=GRPOConfigConfig)
     rewards: RewardsConfig = field(default_factory=RewardsConfig)
     system: SystemConfig = field(default_factory=SystemConfig)
     monitoring: MonitoringConfig = field(default_factory=MonitoringConfig)
@@ -262,57 +327,73 @@ def get_config_field_types() -> Dict[str, str]:
         "model.trust_remote_code": "bool",
         "model.attn_implementation": "str",
         "model.device_placement": "str",
+        "model.unsloth.enabled": "bool",
+        "model.unsloth.load_in_4bit": "bool",
+        "model.unsloth.fast_inference": "bool",
+        "model.unsloth.gpu_memory_utilization": "float",
+        "model.lora.enabled": "bool",
+        "model.lora.rank": "int",
+        "model.lora.alpha": "int",
+        "model.lora.target_modules": "list",
+        "model.lora.use_gradient_checkpointing": "str",
+        "model.lora.random_state": "int",
         
-        # Training - Batch Size
-        "training.batch_size.per_device_train": "int",
-        "training.batch_size.per_device_eval": "int",
-        "training.batch_size.gradient_accumulation_steps": "int",
-        "training.batch_size.generation_batch_size": "int",
-        
-        # Training - Optimization
-        "training.optimization.learning_rate": "float",
-        "training.optimization.warmup_ratio": "float",
-        "training.optimization.weight_decay": "float",
-        
-        # Training - Precision
-        "training.precision.bf16": "bool",
-        "training.precision.tf32": "bool",
-        "training.precision.gradient_checkpointing": "bool",
-        
-        # Training - Scheduling
-        "training.scheduling.logging_steps": "int",
-        "training.scheduling.eval_strategy": "str",
-        "training.scheduling.eval_steps": "int",
-        "training.scheduling.save_strategy": "str",
-        "training.scheduling.save_steps": "int",
-        "training.scheduling.save_total_limit": "int",
-        
-        # Training - Dataloader
-        "training.dataloader.num_workers": "int",
-        "training.dataloader.pin_memory": "bool",
-        "training.dataloader.persistent_workers": "bool",
-        "training.dataloader.prefetch_factor": "int",
-        "training.dataloader.drop_last": "bool",
-        "training.dataloader.group_by_length": "bool",
-        
-        # Training - Epochs
-        "training.epochs": "float",
+        # TrainingArguments
+        "TrainingArguments.output_dir": "str",
+        "TrainingArguments.overwrite_output_dir": "bool",
+        "TrainingArguments.num_train_epochs": "float",
+        "TrainingArguments.max_steps": "int",
+        "TrainingArguments.per_device_train_batch_size": "int",
+        "TrainingArguments.per_device_eval_batch_size": "int",
+        "TrainingArguments.gradient_accumulation_steps": "int",
+        "TrainingArguments.learning_rate": "float",
+        "TrainingArguments.warmup_ratio": "float",
+        "TrainingArguments.weight_decay": "float",
+        "TrainingArguments.logging_steps": "int",
+        "TrainingArguments.eval_strategy": "str",
+        "TrainingArguments.eval_steps": "int",
+        "TrainingArguments.save_strategy": "str",
+        "TrainingArguments.save_steps": "int",
+        "TrainingArguments.save_total_limit": "int",
+        "TrainingArguments.dataloader_num_workers": "int",
+        "TrainingArguments.dataloader_pin_memory": "bool",
+        "TrainingArguments.dataloader_persistent_workers": "bool",
+        "TrainingArguments.dataloader_prefetch_factor": "int",
+        "TrainingArguments.dataloader_drop_last": "bool",
+        "TrainingArguments.seed": "int",
+        "TrainingArguments.bf16": "bool",
+        "TrainingArguments.tf32": "bool",
+        "TrainingArguments.gradient_checkpointing": "bool",
+        "TrainingArguments.push_to_hub": "bool",
+        "TrainingArguments.report_to": "str",
+        "TrainingArguments.remove_unused_columns": "bool",
+        "TrainingArguments.group_by_length": "bool",
+        "TrainingArguments.torch_compile": "bool",
+        "TrainingArguments.optim": "str",
+        "TrainingArguments.adam_beta1": "float",
+        "TrainingArguments.adam_beta2": "float",
+        "TrainingArguments.max_grad_norm": "float",
+        "TrainingArguments.lr_scheduler_type": "str",
         
         # Dataset
         "dataset.name": "str",
         "dataset.subset": "str",
-        "dataset.split.test_size": "float",
+        "dataset.split.test_size": "int",
         "dataset.split.seed": "int",
         "dataset.processing.max_length": "int",
         "dataset.processing.system_prompt": "str",
         
-        # GRPO
-        "grpo.num_generations": "int",
-        "grpo.max_completion_length": "int",
-        "grpo.vllm.enabled": "bool",
-        "grpo.vllm.mode": "str",
-        "grpo.vllm.gpu_memory_utilization": "float",
-        "grpo.liger_loss": "bool",
+        # GRPOConfig
+        "GRPOConfig.max_prompt_length": "int",
+        "GRPOConfig.max_completion_length": "int",
+        "GRPOConfig.num_generations": "int",
+        "GRPOConfig.use_vllm": "bool",
+        "GRPOConfig.vllm_mode": "str",
+        "GRPOConfig.vllm_gpu_memory_utilization": "float",
+        "GRPOConfig.use_liger_loss": "bool",
+        "GRPOConfig.log_completions": "bool",
+        "GRPOConfig.wandb_log_unique_prompts": "bool",
+        "GRPOConfig.ddp_find_unused_parameters": "bool",
         
         # Rewards
         "rewards.functions": "list",
@@ -328,8 +409,8 @@ def get_config_field_types() -> Dict[str, str]:
         "rewards.soft_punish.cache": "int",
         
         # System
-        "system.seed": "int",
         "system.output_dir": "str",
+        "system.resume_from_checkpoint": "str",
         
         # Monitoring
         "monitoring.wandb.enabled": "bool",
@@ -353,6 +434,7 @@ def get_array_fields() -> List[str]:
     """Get list of configuration fields that expect array values."""
     return [
         "rewards.functions",
+        "model.lora.target_modules",
     ]
 
 

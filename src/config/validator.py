@@ -39,9 +39,9 @@ class ConfigValidator:
         
         # Business logic validation
         warnings.extend(self._validate_model_config(config.model))
-        warnings.extend(self._validate_training_config(config.training))
+        warnings.extend(self._validate_training_arguments_config(config.TrainingArguments))
         warnings.extend(self._validate_dataset_config(config.dataset))
-        warnings.extend(self._validate_grpo_config(config.grpo))
+        warnings.extend(self._validate_grpo_config(config.GRPOConfig))
         warnings.extend(self._validate_rewards_config(config.rewards))
         warnings.extend(self._validate_system_config(config.system))
         warnings.extend(self._validate_monitoring_config(config.monitoring))
@@ -128,47 +128,48 @@ class ConfigValidator:
         
         return warnings
     
-    def _validate_training_config(self, training_config) -> List[str]:
-        """Validate training configuration."""
+    def _validate_training_arguments_config(self, training_args_config) -> List[str]:
+        """Validate training arguments configuration."""
         warnings = []
         
-        # Check batch size constraints
-        batch_size = training_config.batch_size
-        
         # GRPO requires effective batch size divisible by num_generations (8)
-        effective_batch_size = (batch_size.per_device_train * 
-                              batch_size.gradient_accumulation_steps)
+        effective_batch_size = (training_args_config.per_device_train_batch_size * 
+                              training_args_config.gradient_accumulation_steps)
         
         if effective_batch_size % 8 != 0:
             raise ValidationError(f"Effective batch size ({effective_batch_size}) must be divisible by 8 for GRPO. "
-                                f"Current: per_device_train={batch_size.per_device_train} * "
-                                f"gradient_accumulation_steps={batch_size.gradient_accumulation_steps}")
+                                f"Current: per_device_train_batch_size={training_args_config.per_device_train_batch_size} * "
+                                f"gradient_accumulation_steps={training_args_config.gradient_accumulation_steps}")
         
         # Check learning rate range
-        lr = training_config.optimization.learning_rate
+        lr = training_args_config.learning_rate
         if lr <= 0:
             raise ValidationError(f"Learning rate must be positive, got {lr}")
         if lr > 1e-2:
             warnings.append(f"Learning rate {lr} seems high. Typical range: 1e-5 to 1e-3")
         
         # Check evaluation strategy
-        eval_strategy = training_config.scheduling.eval_strategy
+        eval_strategy = training_args_config.eval_strategy
         valid_strategies = {"no", "steps", "epoch"}
         if eval_strategy not in valid_strategies:
             raise ValidationError(f"Invalid eval_strategy '{eval_strategy}'. "
                                 f"Valid options: {valid_strategies}")
         
         # Check save strategy
-        save_strategy = training_config.scheduling.save_strategy
+        save_strategy = training_args_config.save_strategy
         valid_save_strategies = {"no", "steps", "epoch"}
         if save_strategy not in valid_save_strategies:
             raise ValidationError(f"Invalid save_strategy '{save_strategy}'. "
                                 f"Valid options: {valid_save_strategies}")
         
         # Check dataloader workers
-        num_workers = training_config.dataloader.num_workers
+        num_workers = training_args_config.dataloader_num_workers
         if num_workers < 0:
-            raise ValidationError(f"dataloader.num_workers must be non-negative, got {num_workers}")
+            raise ValidationError(f"dataloader_num_workers must be non-negative, got {num_workers}")
+        
+        # Check max_steps and num_train_epochs
+        if training_args_config.max_steps > 0 and training_args_config.num_train_epochs > 0:
+            warnings.append("Both max_steps and num_train_epochs are set. max_steps will take precedence.")
         
         return warnings
     
@@ -176,10 +177,10 @@ class ConfigValidator:
         """Validate dataset configuration."""
         warnings = []
         
-        # Check test split size
+        # Check test split size (now integer count)
         test_size = dataset_config.split.test_size
-        if not 0 < test_size < 1:
-            raise ValidationError(f"test_size must be between 0 and 1, got {test_size}")
+        if not isinstance(test_size, int) or test_size <= 0:
+            raise ValidationError(f"test_size must be a positive integer, got {test_size}")
         
         # Check max_length
         max_length = dataset_config.processing.max_length
@@ -203,14 +204,14 @@ class ConfigValidator:
             raise ValidationError(f"max_completion_length must be positive, got {grpo_config.max_completion_length}")
         
         # Check vLLM configuration
-        if grpo_config.vllm.enabled:
-            gpu_util = grpo_config.vllm.gpu_memory_utilization
+        if grpo_config.use_vllm:
+            gpu_util = grpo_config.vllm_gpu_memory_utilization
             if not 0 < gpu_util <= 1:
-                raise ValidationError(f"vllm.gpu_memory_utilization must be between 0 and 1, got {gpu_util}")
+                raise ValidationError(f"vllm_gpu_memory_utilization must be between 0 and 1, got {gpu_util}")
             
             valid_modes = {"colocate", "separate"}
-            if grpo_config.vllm.mode not in valid_modes:
-                raise ValidationError(f"Invalid vllm.mode '{grpo_config.vllm.mode}'. "
+            if grpo_config.vllm_mode not in valid_modes:
+                raise ValidationError(f"Invalid vllm_mode '{grpo_config.vllm_mode}'. "
                                     f"Valid options: {valid_modes}")
         
         return warnings
@@ -295,12 +296,12 @@ class ConfigValidator:
         
         # Check GPU availability for GPU-specific settings
         if not torch.cuda.is_available():
-            if config.training.precision.bf16:
+            if config.TrainingArguments.bf16:
                 warnings.append("bf16=true but CUDA not available. bf16 requires GPU.")
-            if config.training.precision.tf32:
+            if config.TrainingArguments.tf32:
                 warnings.append("tf32=true but CUDA not available. tf32 requires GPU.")
-            if config.grpo.vllm.enabled:
-                warnings.append("vllm.enabled=true but CUDA not available. vLLM requires GPU.")
+            if config.GRPOConfig.use_vllm:
+                warnings.append("use_vllm=true but CUDA not available. vLLM requires GPU.")
         
         # Check memory constraints
         if torch.cuda.is_available():
@@ -317,8 +318,8 @@ class ConfigValidator:
         
         # Check reward functions compatibility
         if "cosine" in config.rewards.functions:
-            if config.grpo.max_completion_length > config.rewards.cosine.max_len:
-                warnings.append("grpo.max_completion_length exceeds cosine.max_len. "
+            if config.GRPOConfig.max_completion_length > config.rewards.cosine.max_len:
+                warnings.append("GRPOConfig.max_completion_length exceeds cosine.max_len. "
                               "Cosine reward may not work properly for long completions.")
         
         return warnings

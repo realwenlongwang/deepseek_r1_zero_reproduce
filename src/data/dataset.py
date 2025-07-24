@@ -17,17 +17,23 @@ SYSTEM_PROMPT = (
     "<answer> answer here </answer>"
 )
 
-def make_conversation(example):
+def make_conversation(example, system_prompt=None):
     """Convert dataset examples into conversation format for training."""
+    if system_prompt is None:
+        system_prompt = SYSTEM_PROMPT
+    
     return {
         "prompt": [
-            {"role": "system", "content": SYSTEM_PROMPT},
+            {"role": "system", "content": system_prompt},
             {"role": "user", "content": example["problem"]},
         ],
     }
 
-def make_conversation_bespoke(example):
+def make_conversation_bespoke(example, system_prompt=None):
     """Convert Bespoke-Stratos dataset into conversation format."""
+    if system_prompt is None:
+        system_prompt = SYSTEM_PROMPT
+    
     # Extract user message from conversations
     user_message = ""
     for conv in example["conversations"]:
@@ -37,18 +43,21 @@ def make_conversation_bespoke(example):
     
     return {
         "prompt": [
-            {"role": "system", "content": SYSTEM_PROMPT},
+            {"role": "system", "content": system_prompt},
             {"role": "user", "content": user_message},
         ],
     }
 
-def make_conversation_countdown(example):
+def make_conversation_countdown(example, system_prompt=None):
     """Convert Countdown-Tasks dataset into conversation format."""
+    if system_prompt is None:
+        system_prompt = SYSTEM_PROMPT
+    
     problem_text = format_countdown_problem(example["target"], example["nums"])
     
     return {
         "prompt": [
-            {"role": "system", "content": SYSTEM_PROMPT},
+            {"role": "system", "content": system_prompt},
             {"role": "user", "content": problem_text},
         ],
     }
@@ -93,8 +102,9 @@ class ReasoningDataset:
         max_length: int = 2048,
         tokenizer: Optional[PreTrainedTokenizer] = None,
         create_splits: bool = True,
-        test_size: float = 0.1,
-        split_seed: int = 42
+        test_size: int = 128,
+        split_seed: int = 42,
+        system_prompt: Optional[str] = None
     ):
         self.dataset_name = dataset_name
         self.split = split
@@ -103,6 +113,7 @@ class ReasoningDataset:
         self.create_splits = create_splits
         self.test_size = test_size
         self.split_seed = split_seed
+        self.system_prompt = system_prompt if system_prompt is not None else SYSTEM_PROMPT
         
         # Load and preprocess the dataset
         self.dataset = self._load_and_preprocess()
@@ -151,16 +162,22 @@ class ReasoningDataset:
             if self.split == "train":
                 # Load full train dataset and create train/test split
                 full_dataset = load_dataset(self.dataset_name, split="train")
+                # Calculate test_size as number of samples
+                total_samples = len(full_dataset)
+                test_size_ratio = min(self.test_size / total_samples, 0.9)  # Cap at 90%
                 split_dataset = full_dataset.train_test_split(
-                    test_size=self.test_size, 
+                    test_size=test_size_ratio, 
                     seed=self.split_seed
                 )
                 raw_dataset = split_dataset["train"]
             elif self.split == "test":
                 # Load full train dataset and create train/test split  
                 full_dataset = load_dataset(self.dataset_name, split="train")
+                # Calculate test_size as number of samples
+                total_samples = len(full_dataset)
+                test_size_ratio = min(self.test_size / total_samples, 0.9)  # Cap at 90%
                 split_dataset = full_dataset.train_test_split(
-                    test_size=self.test_size, 
+                    test_size=test_size_ratio, 
                     seed=self.split_seed
                 )
                 raw_dataset = split_dataset["test"]
@@ -200,7 +217,7 @@ class ReasoningDataset:
                 return None
             
             # Convert to our conversation format
-            conversation_data = make_conversation_bespoke(item)
+            conversation_data = make_conversation_bespoke(item, self.system_prompt)
             
             # Process assistant response if available (for reference/evaluation)
             reference_response = ""
@@ -228,7 +245,7 @@ class ReasoningDataset:
                 return None
             
             # Create conversation data
-            conversation_data = make_conversation_countdown(item)
+            conversation_data = make_conversation_countdown(item, self.system_prompt)
             
             # Create problem text for reference
             problem_text = format_countdown_problem(target, nums)
@@ -264,7 +281,7 @@ class ReasoningDataset:
                 return None
             
             # Create conversation data
-            conversation_data = make_conversation(item)
+            conversation_data = make_conversation(item, self.system_prompt)
             
             # Extract answer for reference if solution exists
             reference_answer = ""
@@ -333,8 +350,9 @@ def create_dataset(
     max_length: int = 2048,
     tokenizer: Optional[PreTrainedTokenizer] = None,
     create_splits: bool = True,
-    test_size: float = 0.1,
-    split_seed: int = 42
+    test_size: int = 128,
+    split_seed: int = 42,
+    system_prompt: Optional[str] = None
 ) -> ReasoningDataset:
     """Create a reasoning dataset."""
     return ReasoningDataset(
@@ -344,15 +362,17 @@ def create_dataset(
         tokenizer=tokenizer,
         create_splits=create_splits,
         test_size=test_size,
-        split_seed=split_seed
+        split_seed=split_seed,
+        system_prompt=system_prompt
     )
 
 def create_train_test_datasets(
     dataset_name: str = "Jiayi-Pan/Countdown-Tasks-3to4",
     max_length: int = 2048,
     tokenizer: Optional[PreTrainedTokenizer] = None,
-    test_size: float = 0.1,
-    split_seed: int = 42
+    test_size: int = 128,
+    split_seed: int = 42,
+    system_prompt: Optional[str] = None
 ) -> Tuple[ReasoningDataset, ReasoningDataset]:
     """Create both train and test datasets with proper splitting."""
     train_dataset = create_dataset(
@@ -362,7 +382,8 @@ def create_train_test_datasets(
         tokenizer=tokenizer,
         create_splits=True,
         test_size=test_size,
-        split_seed=split_seed
+        split_seed=split_seed,
+        system_prompt=system_prompt
     )
     
     test_dataset = create_dataset(
@@ -372,7 +393,8 @@ def create_train_test_datasets(
         tokenizer=tokenizer,
         create_splits=True,
         test_size=test_size,
-        split_seed=split_seed
+        split_seed=split_seed,
+        system_prompt=system_prompt
     )
     
     return train_dataset, test_dataset

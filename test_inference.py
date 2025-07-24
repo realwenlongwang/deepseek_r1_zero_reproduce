@@ -22,7 +22,7 @@ def parse_args():
     parser = argparse.ArgumentParser(description="Test inference with a trained model checkpoint")
     parser.add_argument("--checkpoint_path", type=str, required=True,
                        help="Path to the model checkpoint directory")
-    parser.add_argument("--max_length", type=int, default=512,
+    parser.add_argument("--max_length", type=int, default=1024,
                        help="Maximum generation length")
     parser.add_argument("--temperature", type=float, default=0.7,
                        help="Sampling temperature")

@@ -18,9 +18,17 @@ sys.path.append(os.path.join(os.path.dirname(__file__), 'src'))
 import torch
 from transformers import (
     AutoModelForCausalLM,
-    AutoTokenizer, 
-    set_seed,
+    AutoTokenizer,
+    TrainingArguments,
 )
+from transformers.trainer_utils import set_seed
+
+# Try to import Unsloth
+try:
+    from unsloth import FastLanguageModel
+    UNSLOTH_AVAILABLE = True
+except ImportError:
+    UNSLOTH_AVAILABLE = False
 
 # Import TRL for GRPO training
 from trl import (
@@ -30,7 +38,7 @@ from trl import (
 
 # Import new configuration system
 from src.config import ConfigManager, Config, ValidationError
-from src.data.dataset import create_dataset, create_train_test_datasets
+from src.data.dataset import create_train_test_datasets
 from src.rewards.openr1_rewards import get_reward_funcs
 
 # Set up logging
@@ -46,9 +54,62 @@ logger = logging.getLogger(__name__)
 
 
 def setup_model_and_tokenizer(config: Config):
-    """Setup model and tokenizer from configuration."""
+    """Setup model and tokenizer from configuration with Unsloth support."""
     model_config = config.model
     logger.info(f"Loading model: {model_config.name}")
+    
+    # Check if Unsloth is enabled and available
+    use_unsloth = model_config.unsloth.enabled and UNSLOTH_AVAILABLE
+    
+    if use_unsloth:
+        logger.info("🚀 Using Unsloth FastLanguageModel for optimized training")
+        return _setup_unsloth_model(config)
+    else:
+        if model_config.unsloth.enabled and not UNSLOTH_AVAILABLE:
+            logger.warning("⚠️ Unsloth requested but not available. Falling back to standard loading.")
+        logger.info("📚 Using standard AutoModelForCausalLM")
+        return _setup_standard_model(config)
+
+
+def _setup_unsloth_model(config: Config):
+    """Setup model and tokenizer using Unsloth FastLanguageModel."""
+    model_config = config.model
+    unsloth_config = model_config.unsloth
+    
+    # Get max_seq_length from dataset processing config
+    max_seq_length = config.dataset.processing.max_length
+    
+    # Load model and tokenizer with Unsloth
+    try:
+        model, tokenizer = FastLanguageModel.from_pretrained(
+            model_name=model_config.name,
+            max_seq_length=max_seq_length,
+            load_in_4bit=unsloth_config.load_in_4bit,
+            fast_inference=unsloth_config.fast_inference,
+            gpu_memory_utilization=unsloth_config.gpu_memory_utilization,
+        )
+        logger.info("✅ Successfully loaded model with Unsloth FastLanguageModel")
+    except Exception as e:
+        logger.error(f"❌ Failed to load with Unsloth: {e}")
+        logger.info("🔄 Falling back to standard model loading")
+        return _setup_standard_model(config)
+    
+    # Configure tokenizer
+    tokenizer = _configure_tokenizer(tokenizer, model_config.name)
+    
+    # Apply LoRA if enabled
+    if config.model.lora.enabled:
+        model = _apply_lora_to_model(model, config)
+    
+    logger.info(f"Model loaded with Unsloth: {model.config.model_type if hasattr(model, 'config') else 'Unknown'}")
+    logger.info(f"Model parameters: {model.num_parameters():,}")
+    
+    return model, tokenizer
+
+
+def _setup_standard_model(config: Config):
+    """Setup model and tokenizer using standard transformers."""
+    model_config = config.model
     
     # Load tokenizer
     tokenizer = AutoTokenizer.from_pretrained(
@@ -57,31 +118,11 @@ def setup_model_and_tokenizer(config: Config):
         trust_remote_code=model_config.trust_remote_code
     )
     
-    # Ensure pad token is set
-    if tokenizer.pad_token is None:
-        tokenizer.pad_token = tokenizer.eos_token
-    
-    # Set chat template for GRPO training
-    if tokenizer.chat_template is None:
-        tokenizer.chat_template = "{% for message in messages %}{% if message['role'] == 'system' %}{{ message['content'] }}{% elif message['role'] == 'user' %}User: {{ message['content'] }}{% elif message['role'] == 'assistant' %}Assistant: {{ message['content'] }}{% endif %}{% if not loop.last %}\n{% endif %}{% endfor %}"
+    # Configure tokenizer
+    tokenizer = _configure_tokenizer(tokenizer, model_config.name)
     
     # Determine device mapping based on configuration
-    device_map = None
-    if torch.cuda.is_available():
-        if config.model.device_placement == "single":
-            device_map = "cuda:0"
-            logger.info("Using single GPU (cuda:0) for model")
-        elif config.model.device_placement == "multi":
-            device_map = "auto"
-            logger.info("Using multi-GPU (auto) for model")
-        else:  # auto
-            # Auto-detect based on model size
-            if any(size in model_config.name for size in ["0.5B", "1B", "1.5B", "3B"]):
-                device_map = "cuda:0"
-                logger.info("Auto-detected: Using single GPU for small-medium model")
-            else:
-                device_map = "auto"
-                logger.info("Auto-detected: Using multi-GPU for large model")
+    device_map = _get_device_mapping(config)
     
     # Load model
     model = AutoModelForCausalLM.from_pretrained(
@@ -100,6 +141,93 @@ def setup_model_and_tokenizer(config: Config):
     return model, tokenizer
 
 
+def _configure_tokenizer(tokenizer, model_name=None):
+    """Configure tokenizer settings for GRPO training."""
+    # Ensure pad token is set
+    if tokenizer.pad_token is None:
+        tokenizer.pad_token = tokenizer.eos_token
+    
+    # Set chat template using Unsloth's method if available
+    if tokenizer.chat_template is None:
+        try:
+            from unsloth.chat_templates import get_chat_template
+            
+            # Determine appropriate template based on model
+            if model_name and "qwen" in model_name.lower():
+                template_name = "qwen-2.5"
+            elif model_name and "gemma" in model_name.lower():
+                template_name = "gemma-3"
+            elif model_name and "llama" in model_name.lower():
+                template_name = "llama-3.1"
+            else:
+                template_name = "chatml"  # Default ChatML format
+            
+            logger.info(f"Applying Unsloth chat template: {template_name}")
+            
+            tokenizer = get_chat_template(
+                tokenizer,
+                chat_template=template_name,
+                mapping={"role": "role", "content": "content"},
+                map_eos_token=True
+            )
+            
+            logger.info("✅ Successfully applied Unsloth chat template")
+            
+        except ImportError:
+            logger.warning("⚠️ Unsloth chat_templates not available, using ChatML fallback")
+            tokenizer.chat_template = "{% for message in messages %}<|im_start|>{{ message['role'] }}\n{{ message['content'] }}<|im_end|>\n{% endfor %}"
+        
+        except Exception as e:
+            logger.warning(f"⚠️ Failed to apply Unsloth chat template: {e}")
+            tokenizer.chat_template = "{% for message in messages %}<|im_start|>{{ message['role'] }}\n{{ message['content'] }}<|im_end|>\n{% endfor %}"
+    
+    return tokenizer
+
+
+def _get_device_mapping(config: Config):
+    """Determine device mapping based on configuration."""
+    device_map = None
+    if torch.cuda.is_available():
+        if config.model.device_placement == "single":
+            device_map = "cuda:0"
+            logger.info("Using single GPU (cuda:0) for model")
+        elif config.model.device_placement == "multi":
+            device_map = "auto"
+            logger.info("Using multi-GPU (auto) for model")
+        else:  # auto
+            # Auto-detect based on model size
+            model_name = config.model.name
+            if any(size in model_name for size in ["0.5B", "1B", "1.5B", "3B"]):
+                device_map = "cuda:0"
+                logger.info("Auto-detected: Using single GPU for small-medium model")
+            else:
+                device_map = "auto"
+                logger.info("Auto-detected: Using multi-GPU for large model")
+    return device_map
+
+
+def _apply_lora_to_model(model, config: Config):
+    """Apply LoRA PEFT to the model using Unsloth."""
+    lora_config = config.model.lora
+    
+    try:
+        model = FastLanguageModel.get_peft_model(
+            model,
+            r=lora_config.rank,
+            target_modules=lora_config.target_modules,
+            lora_alpha=lora_config.alpha,
+            use_gradient_checkpointing=lora_config.use_gradient_checkpointing,
+            random_state=lora_config.random_state,
+        )
+        logger.info(f"✅ Applied LoRA PEFT: rank={lora_config.rank}, alpha={lora_config.alpha}")
+        logger.info(f"📋 Target modules: {', '.join(lora_config.target_modules)}")
+    except Exception as e:
+        logger.error(f"❌ Failed to apply LoRA: {e}")
+        logger.info("🔄 Continuing without LoRA")
+    
+    return model
+
+
 def setup_datasets(config: Config):
     """Setup training and evaluation datasets from configuration."""
     dataset_config = config.dataset
@@ -108,8 +236,10 @@ def setup_datasets(config: Config):
     # Load datasets with automatic train/test split handling
     train_dataset, test_dataset = create_train_test_datasets(
         dataset_name=dataset_config.name,
+        max_length=dataset_config.processing.max_length,
         test_size=dataset_config.split.test_size,
-        split_seed=dataset_config.split.seed
+        split_seed=dataset_config.split.seed,
+        system_prompt=dataset_config.processing.system_prompt
     )
     
     logger.info(f"Training dataset size: {len(train_dataset)}")
@@ -121,65 +251,88 @@ def setup_datasets(config: Config):
 
 def create_training_arguments(config: Config, output_dir: str):
     """Create TrainingArguments from configuration."""
-    from transformers import TrainingArguments
     
-    training_config = config.training
+    training_args_config = config.TrainingArguments
     
-    return TrainingArguments(
-        output_dir=output_dir,
-        overwrite_output_dir=False,
-        num_train_epochs=training_config.epochs,
-        per_device_train_batch_size=training_config.batch_size.per_device_train,
-        per_device_eval_batch_size=training_config.batch_size.per_device_eval,
-        gradient_accumulation_steps=training_config.batch_size.gradient_accumulation_steps,
-        learning_rate=training_config.optimization.learning_rate,
-        warmup_ratio=training_config.optimization.warmup_ratio,
-        weight_decay=training_config.optimization.weight_decay,
-        logging_steps=training_config.scheduling.logging_steps,
-        eval_strategy=training_config.scheduling.eval_strategy,
-        eval_steps=training_config.scheduling.eval_steps,
-        save_strategy=training_config.scheduling.save_strategy,
-        save_steps=training_config.scheduling.save_steps,
-        save_total_limit=training_config.scheduling.save_total_limit,
-        dataloader_num_workers=training_config.dataloader.num_workers,
-        dataloader_pin_memory=training_config.dataloader.pin_memory,
-        dataloader_persistent_workers=training_config.dataloader.persistent_workers,
-        dataloader_prefetch_factor=training_config.dataloader.prefetch_factor,
-        dataloader_drop_last=training_config.dataloader.drop_last,
-        seed=config.system.seed,
-        bf16=training_config.precision.bf16,
-        tf32=training_config.precision.tf32,
-        gradient_checkpointing=training_config.precision.gradient_checkpointing,
-        push_to_hub=False,
-        report_to="none",
-        remove_unused_columns=False,
-        group_by_length=training_config.dataloader.group_by_length,
-    )
+    # Convert dataclass to dict and update output_dir
+    training_args_dict = {
+        "output_dir": output_dir,
+        "overwrite_output_dir": training_args_config.overwrite_output_dir,
+        "num_train_epochs": training_args_config.num_train_epochs,
+        "max_steps": training_args_config.max_steps,
+        "per_device_train_batch_size": (
+            training_args_config.per_device_train_batch_size
+        ),
+        "per_device_eval_batch_size": (
+            training_args_config.per_device_eval_batch_size
+        ),
+        "gradient_accumulation_steps": (
+            training_args_config.gradient_accumulation_steps
+        ),
+        "learning_rate": training_args_config.learning_rate,
+        "warmup_ratio": training_args_config.warmup_ratio,
+        "weight_decay": training_args_config.weight_decay,
+        "logging_steps": training_args_config.logging_steps,
+        "eval_strategy": training_args_config.eval_strategy,
+        "eval_steps": training_args_config.eval_steps,
+        "save_strategy": training_args_config.save_strategy,
+        "save_steps": training_args_config.save_steps,
+        "save_total_limit": training_args_config.save_total_limit,
+        "dataloader_num_workers": training_args_config.dataloader_num_workers,
+        "dataloader_pin_memory": training_args_config.dataloader_pin_memory,
+        "dataloader_persistent_workers": (
+            training_args_config.dataloader_persistent_workers
+        ),
+        "dataloader_prefetch_factor": (
+            training_args_config.dataloader_prefetch_factor
+            if training_args_config.dataloader_num_workers > 0
+            else None
+        ),
+        "dataloader_drop_last": training_args_config.dataloader_drop_last,
+        "seed": training_args_config.seed,
+        "bf16": training_args_config.bf16,
+        "tf32": training_args_config.tf32,
+        "gradient_checkpointing": (
+            training_args_config.gradient_checkpointing
+        ),
+        "push_to_hub": training_args_config.push_to_hub,
+        "report_to": training_args_config.report_to,
+        "remove_unused_columns": training_args_config.remove_unused_columns,
+        "group_by_length": training_args_config.group_by_length,
+        "torch_compile": training_args_config.torch_compile,
+    }
+
+    return TrainingArguments(**training_args_dict)
 
 
 def create_grpo_config_from_config(config: Config, training_args):
     """Create GRPOConfig from configuration."""
     grpo_config_dict = training_args.to_dict()
-    grpo_settings = config.grpo
-    
+    grpo_settings = config.GRPOConfig
+
     # Add GRPO-specific settings
     grpo_config_dict.update({
+        "max_prompt_length": grpo_settings.max_prompt_length,
         "max_completion_length": grpo_settings.max_completion_length,
-        "generation_batch_size": config.training.batch_size.generation_batch_size,
         "num_generations": grpo_settings.num_generations,
-        "use_vllm": grpo_settings.vllm.enabled,
-        "vllm_mode": grpo_settings.vllm.mode,
-        "vllm_gpu_memory_utilization": grpo_settings.vllm.gpu_memory_utilization,
-        "use_liger_loss": grpo_settings.liger_loss,
+        "use_vllm": grpo_settings.use_vllm,
+        "vllm_mode": grpo_settings.vllm_mode,
+        "vllm_gpu_memory_utilization": (
+            grpo_settings.vllm_gpu_memory_utilization
+        ),
+        "use_liger_loss": grpo_settings.use_liger_loss,
+        "log_completions": grpo_settings.log_completions,
+        "wandb_log_unique_prompts": grpo_settings.wandb_log_unique_prompts,
+        "ddp_find_unused_parameters": grpo_settings.ddp_find_unused_parameters,
     })
-    
+
     # Create GRPOConfig
     try:
         grpo_config = GRPOConfig(**grpo_config_dict, generation_kwargs={})
     except TypeError:
         # Fallback for older TRL versions
         grpo_config = GRPOConfig(**grpo_config_dict)
-    
+
     return grpo_config
 
 
@@ -215,63 +368,107 @@ def get_callbacks(config: Config, training_args, delayed_dir_callback=None):
         CheckpointPreservationCallback,
         GRPOScriptArguments
     )
-    
+
     callbacks = []
-    
+
     # Create dummy script args for callbacks (backward compatibility)
     script_args = GRPOScriptArguments(
         reward_funcs=config.rewards.functions
     )
-    
+
     # Choose logging callback based on configuration
-    if config.monitoring.logging.profiling_mode or config.callbacks.comprehensive_logging.enabled:
+    comprehensive_logging_enabled = (
+        config.monitoring.logging.profiling_mode or
+        config.callbacks.comprehensive_logging.enabled
+    )
+    if comprehensive_logging_enabled:
         callbacks.append(ComprehensiveLoggingCallback(
-            script_args, 
+            script_args,
             log_examples=config.callbacks.comprehensive_logging.log_examples
         ))
     else:
         callbacks.append(ProductionLoggingCallback(script_args))
-    
+
     # Add reward trend callback
     callbacks.append(RewardTrendCallback(
         window_size=config.callbacks.reward_trend.window_size
     ))
-    
+
     # Add delayed directory creation callback if provided
     if delayed_dir_callback is not None:
         callbacks.append(delayed_dir_callback)
-    
+
     # Add checkpoint preservation callback if enabled
     if config.callbacks.checkpoint_preservation.enabled:
         callbacks.append(CheckpointPreservationCallback(
-            preserve_every_n_steps=config.callbacks.checkpoint_preservation.every_n_steps,
+            preserve_every_n_steps=(
+                config.callbacks.checkpoint_preservation.every_n_steps
+            ),
             preserve_dir=config.callbacks.checkpoint_preservation.directory
         ))
-    
+
     return callbacks
 
 
+
+
 def create_grpo_trainer(config: Config, model, tokenizer, reward_functions, training_args, train_dataset, eval_dataset, callbacks):
-    """Create GRPOTrainer from configuration."""
+    """Create GRPOTrainer from configuration with vLLM fallback mechanism."""
     logger.info("Creating GRPOTrainer with configuration...")
-    
     # Create GRPOConfig
     grpo_config = create_grpo_config_from_config(config, training_args)
     
-    # Create GRPOTrainer
-    grpo_trainer = GRPOTrainer(
-        model=model,
-        reward_funcs=reward_functions,
-        args=grpo_config,
-        train_dataset=train_dataset,
-        eval_dataset=eval_dataset,
-        processing_class=tokenizer,
-        callbacks=callbacks
-    )
+    # Check if vLLM is enabled and set up fallback mechanism
+    vllm_enabled = config.GRPOConfig.use_vllm
+    if vllm_enabled:
+        logger.info("vLLM is enabled - distributed environment already set up")
     
-    logger.info("✅ GRPOTrainer created successfully")
+    # Create GRPOTrainer with vLLM fallback
+    try:
+        grpo_trainer = GRPOTrainer(
+            model=model,
+            reward_funcs=reward_functions,
+            args=grpo_config,
+            train_dataset=train_dataset,
+            eval_dataset=eval_dataset,
+            processing_class=tokenizer,
+            callbacks=callbacks
+        )
+        
+        if vllm_enabled:
+            logger.info("✅ GRPOTrainer created successfully with vLLM enabled")
+        else:
+            logger.info("✅ GRPOTrainer created successfully with vLLM disabled")
+            
+    except Exception as e:
+        if vllm_enabled:
+            logger.warning(f"Failed to create GRPOTrainer with vLLM: {e}")
+            logger.info("Falling back to GRPOTrainer without vLLM...")
+            
+            # Create fallback config without vLLM
+            grpo_config_fallback = create_grpo_config_from_config(config, training_args)
+            grpo_config_fallback.use_vllm = False
+            
+            try:
+                grpo_trainer = GRPOTrainer(
+                    model=model,
+                    reward_funcs=reward_functions,
+                    args=grpo_config_fallback,
+                    train_dataset=train_dataset,
+                    eval_dataset=eval_dataset,
+                    processing_class=tokenizer,
+                    callbacks=callbacks
+                )
+                logger.info("✅ GRPOTrainer created successfully with vLLM fallback disabled")
+            except Exception as fallback_e:
+                logger.error(f"Failed to create GRPOTrainer even without vLLM: {fallback_e}")
+                raise fallback_e
+        else:
+            logger.error(f"Failed to create GRPOTrainer: {e}")
+            raise e
+    
     logger.info(f"   Model: {model.config.model_type}")
-    logger.info(f"   Reward functions: {len(reward_functions)}")
+    # logger.info(f"   Reward functions: {len(reward_functions)}")
     logger.info(f"   Callbacks: {len(callbacks)}")
     logger.info(f"   Training dataset size: {len(train_dataset)}")
     if eval_dataset:
@@ -320,7 +517,7 @@ def generate_unique_output_dir(config: Config) -> str:
     return output_dir
 
 
-def setup_monitoring(config: Config):
+def setup_monitoring(config: Config, resume_info=None):
     """Setup monitoring and logging from configuration."""
     # Configure logging level
     logging_config = config.monitoring.logging
@@ -329,8 +526,20 @@ def setup_monitoring(config: Config):
     # Setup wandb if enabled
     if config.monitoring.wandb.enabled:
         os.environ["WANDB_PROJECT"] = config.monitoring.wandb.project
-        if config.monitoring.wandb.run_name:
-            os.environ["WANDB_RUN_NAME"] = config.monitoring.wandb.run_name
+        
+        # Handle resume scenario with descriptive run name
+        run_name = config.monitoring.wandb.run_name
+        if resume_info and resume_info.get('previous_run_id') and resume_info.get('resume_step'):
+            prev_run_id = resume_info['previous_run_id']
+            step = resume_info['resume_step']
+            if run_name:
+                run_name = f"{run_name}_resumed_from_{prev_run_id}_step{step}"
+            else:
+                run_name = f"qwen2.5-3b_format-equation_resumed_from_{prev_run_id}_step{step}"
+        
+        if run_name:
+            os.environ["WANDB_RUN_NAME"] = run_name
+            
         return "wandb"
     else:
         return "none"
@@ -374,18 +583,43 @@ def main():
         # Load configuration with CLI overrides
         config = config_manager.load_config(cli_args=filtered_args)
         
+        
         # Set seed
-        set_seed(config.system.seed)
+        set_seed(config.TrainingArguments.seed)
         
-        # Setup monitoring
-        report_to = setup_monitoring(config)
-        
-        # Generate output directory if not specified
-        if config.system.output_dir is None:
+        # Handle resume from checkpoint or generate new output directory
+        resume_info = None
+        if config.system.resume_from_checkpoint:
+            checkpoint_path = config.system.resume_from_checkpoint
+            if not os.path.exists(checkpoint_path):
+                raise ValueError(f"Resume checkpoint path does not exist: {checkpoint_path}")
+            
+            # Extract information for resume
+            checkpoint_dir = os.path.dirname(checkpoint_path)
+            checkpoint_name = os.path.basename(checkpoint_path)
+            actual_output_dir = checkpoint_dir
+            
+            # Extract step number from checkpoint name
+            import re
+            step_match = re.search(r'checkpoint-(\d+)', checkpoint_name)
+            resume_step = step_match.group(1) if step_match else "unknown"
+            
+            # Set resume info for wandb naming
+            resume_info = {
+                'previous_run_id': 'vfq6army',  # Known from our analysis
+                'resume_step': resume_step
+            }
+            
+            logger.info(f"Resuming from checkpoint: {checkpoint_path}")
+            logger.info(f"Using existing output directory: {actual_output_dir}")
+        elif config.system.output_dir is None:
             actual_output_dir = generate_unique_output_dir(config)
             logger.info(f"Generated unique output directory: {actual_output_dir}")
         else:
             actual_output_dir = config.system.output_dir
+        
+        # Setup monitoring with resume info
+        report_to = setup_monitoring(config, resume_info)
         
         # Create temporary directory for initial setup
         import tempfile
@@ -440,8 +674,12 @@ def main():
         )
         
         # Start training
-        logger.info("🚀 Starting GRPO training...")
-        train_result = grpo_trainer.train()
+        if config.system.resume_from_checkpoint:
+            logger.info(f"🔄 Resuming GRPO training from: {config.system.resume_from_checkpoint}")
+            train_result = grpo_trainer.train(resume_from_checkpoint=config.system.resume_from_checkpoint)
+        else:
+            logger.info("🚀 Starting GRPO training...")
+            train_result = grpo_trainer.train()
         
         logger.info("\n" + "="*80)
         logger.info("🎉 GRPO TRAINING COMPLETED SUCCESSFULLY!")

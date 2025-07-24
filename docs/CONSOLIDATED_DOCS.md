@@ -1,4 +1,1436 @@
-![(title)](title.png)
+
+
+---
+
+# Configuration Integration
+
+
+---
+
+# Configuration Integration Summary
+
+
+This document summarizes the integration of tutorial-based GRPO configurations with our existing config system.
+
+## 📁 Configuration Structure
+
+### **New Files Added:**
+- `src/config/grpo_config.py` - Tutorial GRPO configurations
+- `tests/test_config_integration.py` - Integration testing
+
+### **Modified Files:**
+- `src/config/config.py` - Added conversion methods to tutorial format
+
+## 🔧 Configuration Classes
+
+### **1. GRPOScriptArguments** 
+Located in `src/config/grpo_config.py`
+
+```python
+@dataclass
+class GRPOScriptArguments:
+    reward_funcs: List[str] = ["accuracy", "format"]
+    cosine_min_value_wrong: float = -0.5
+    cosine_max_value_wrong: float = -0.1
+    cosine_min_value_correct: float = 0.8
+    cosine_max_value_correct: float = 1.0
+    cosine_max_len: int = 1000
+    repetition_n_grams: int = 3
+    repetition_max_penalty: float = -0.1
+```
+
+**Purpose**: Controls reward function behavior and parameters
+
+### **2. ModelConfig (Tutorial)**
+Located in `src/config/grpo_config.py`
+
+```python
+@dataclass  
+class ModelConfig:
+    model_name_or_path: str = "Qwen/Qwen2.5-7B-Instruct"
+    model_revision: str = "main"
+    torch_dtype: str = "bfloat16"
+    trust_remote_code: bool = True
+    attn_implementation: str = "flash_attention_2"
+```
+
+**Purpose**: Model-specific configuration following tutorial format
+
+### **3. TrainingArguments**
+Created via `create_training_arguments()` function
+
+```python
+TrainingArguments(
+    output_dir="./output",
+    num_train_epochs=1,
+    per_device_train_batch_size=8,
+    learning_rate=5e-5,
+    eval_strategy="steps",
+    eval_steps=50,
+    # ... more parameters
+)
+```
+
+**Purpose**: Complete training configuration from transformers library
+
+## 🔄 Configuration Conversion
+
+### **From Our Config to Tutorial Format:**
+
+```python
+
+---
+
+# Convert model config
+
+tutorial_model = config.model.to_tutorial_config()
+
+
+---
+
+# Convert reward config  
+
+grpo_script_args = config.rewards.to_grpo_args()
+
+
+---
+
+# Create training args
+
+training_args = create_training_arguments(config.output.output_dir)
+```
+
+### **Reward Function Registry:**
+
+```python
+reward_funcs_registry = {
+    "accuracy": accuracy_reward,
+    "format": format_reward, 
+    "reasoning_steps": reasoning_steps_reward,
+    "cosine": get_cosine_scaled_reward(...),
+    "repetition_penalty": get_repetition_penalty_reward(...)
+}
+```
+
+## 🎯 Usage Example
+
+### **Complete GRPO Configuration Setup:**
+
+```python
+from src.config.config import create_default_config
+from src.config.grpo_config import (
+    create_training_arguments,
+    get_reward_functions, 
+    get_callbacks
+)
+
+# 1. Load our config
+config = create_default_config()
+
+# 2. Convert to tutorial format
+tutorial_model_config = config.model.to_tutorial_config()
+grpo_script_args = config.rewards.to_grpo_args()
+training_args = create_training_arguments(config.output.output_dir)
+
+# 3. Get components for training
+reward_functions = get_reward_functions(grpo_script_args)
+callbacks = get_callbacks(training_args, tutorial_model_config, grpo_script_args)
+
+# 4. Ready for GRPOTrainer!
+```
+
+## 📋 Supported Reward Functions
+
+Based on `reward_funcs` list in GRPOScriptArguments:
+
+1. **"accuracy"** - Mathematical correctness checking
+2. **"format"** - Strict `<think>/<answer>` format validation  
+3. **"reasoning_steps"** - Step-by-step reasoning detection
+4. **"cosine"** - Length-based reward scaling
+5. **"repetition_penalty"** - N-gram repetition penalization
+
+## 🧪 Testing
+
+### **Run Integration Tests:**
+```bash
+python tests/test_config_integration.py
+```
+
+### **Test Coverage:**
+✅ Config creation and conversion  
+✅ YAML config loading  
+✅ Reward function instantiation  
+✅ Callback system setup  
+✅ Complete training configuration  
+
+## 🔗 Integration Points
+
+### **With Existing System:**
+- **Backward compatible** with existing config.py
+- **YAML config support** maintained
+- **Flexible reward selection** based on weights
+
+### **With Tutorial Format:**
+- **Direct compatibility** with GRPO trainer
+- **Exact parameter matching** with tutorial
+- **Proper callback system** for logging
+
+## 🚀 Next Steps
+
+The configuration system is now **fully integrated** and ready for:
+
+1. **GRPO Trainer Integration** - All required configs available
+2. **Model Loading** - Tutorial ModelConfig ready
+3. **Reward System** - All 5 reward functions configured
+4. **Training Pipeline** - Complete TrainingArguments setup
+
+**Status**: ✅ **READY FOR GRPO TRAINING**# Configuration System Documentation
+
+This document describes the new centralized YAML configuration system for the DeepSeek R1 Zero GRPO training project.
+
+## Features
+
+- **Centralized Configuration**: All settings in one hierarchical YAML file
+- **CLI Overrides**: Override any configuration value from command line
+- **Array Syntax**: Support for bracket notation: `[item1,item2,item3]`
+- **Type Validation**: Comprehensive type checking and business logic validation
+- **Backwards Compatibility**: Legacy CLI arguments still work
+- **Environment Variables**: Support for environment variable overrides
+- **Configuration Profiles**: Pre-configured profiles for different environments
+
+## Quick Start
+
+### Basic Usage
+
+```bash
+
+---
+
+# Use default configuration
+
+python train_grpo.py
+
+
+---
+
+# Use development profile
+
+python train_grpo.py --profile dev
+
+
+---
+
+# Override specific settings
+
+python train_grpo.py --model.name "Qwen/Qwen2.5-7B" --training.epochs 2.0
+```
+
+### Array Syntax
+
+```bash
+
+---
+
+# Set reward functions using bracket notation
+
+python train_grpo.py --rewards.functions [accuracy,format,reasoning_steps]
+
+
+---
+
+# Alternative syntax
+
+python train_grpo.py --rewards.functions=[accuracy,format,reasoning_steps]
+
+
+---
+
+# With spaces
+
+python train_grpo.py --rewards.functions [accuracy, format, reasoning_steps]
+```
+
+### Legacy Compatibility
+
+```bash
+
+---
+
+# Old arguments still work
+
+python train_grpo.py --model_name "Qwen/Qwen2.5-7B" --learning_rate 1e-4 --no_wandb
+```
+
+## Configuration Structure
+
+The configuration is organized hierarchically:
+
+```yaml
+project:          # Project metadata
+model:            # Model configuration
+training:         # Training settings
+  batch_size:     # Batch size configuration
+  optimization:   # Optimizer settings
+  precision:      # Mixed precision settings
+  scheduling:     # Training schedule
+  dataloader:     # Data loading settings
+dataset:          # Dataset configuration
+  split:          # Train/test split settings
+  processing:     # Data processing settings
+grpo:             # GRPO-specific settings
+  vllm:           # vLLM configuration
+rewards:          # Reward function configuration
+  cosine:         # Cosine reward settings
+  repetition:     # Repetition penalty settings
+  code:           # Code reward settings
+  soft_punish:    # Soft punishment settings
+system:           # System configuration
+monitoring:       # Monitoring and logging
+  wandb:          # Weights & Biases settings
+  logging:        # Logging configuration
+callbacks:        # Callback configuration
+  comprehensive_logging:    # Detailed logging
+  reward_trend:            # Reward trend analysis
+  checkpoint_preservation: # Checkpoint preservation
+```
+
+## Configuration Profiles
+
+### Available Profiles
+
+1. **default** - Standard training configuration
+2. **dev** - Development profile (faster, less logging)
+3. **prod** - Production profile (full training, comprehensive logging)
+4. **test** - Testing profile (minimal resources)
+5. **profile** - Profiling profile (detailed performance analysis)
+
+### Using Profiles
+
+```bash
+
+---
+
+# Use development profile
+
+python train_grpo.py --profile dev
+
+
+---
+
+# Use production profile with overrides
+
+python train_grpo.py --profile prod --training.epochs 5.0
+```
+
+## CLI Override Syntax
+
+### Dot Notation for Nested Values
+
+```bash
+
+---
+
+# Set nested configuration values
+
+python train_grpo.py --training.optimization.learning_rate 1e-4
+python train_grpo.py --model.name "Qwen/Qwen2.5-7B"
+python train_grpo.py --dataset.split.test_size 0.2
+```
+
+### Array Values
+
+```bash
+# Bracket notation (recommended)
+python train_grpo.py --rewards.functions [accuracy,format,reasoning_steps]
+
+
+---
+
+# Equal sign syntax
+
+python train_grpo.py --rewards.functions=[accuracy,format,reasoning_steps]
+
+
+---
+
+# With spaces
+
+python train_grpo.py --rewards.functions [accuracy, format, reasoning_steps]
+```
+
+### Boolean Values
+
+```bash
+
+---
+
+# Boolean flags
+
+python train_grpo.py --monitoring.wandb.enabled false
+python train_grpo.py --training.precision.gradient_checkpointing true
+```
+
+### Complex Example
+
+```bash
+python train_grpo.py \
+    --profile prod \
+    --model.name "Qwen/Qwen2.5-7B" \
+    --training.epochs 3.0 \
+    --training.optimization.learning_rate 3e-5 \
+    --training.batch_size.per_device_train 4 \
+    --rewards.functions [accuracy,format,reasoning_steps,cosine] \
+    --monitoring.wandb.enabled true \
+    --monitoring.wandb.run_name "production-run-v1" \
+    --callbacks.checkpoint_preservation.every_n_steps 1000
+```
+
+## Environment Variables
+
+Set environment variables with `GRPO_` prefix:
+
+```bash
+export GRPO_TRAINING_LEARNING_RATE=1e-4
+export GRPO_MODEL_NAME="Qwen/Qwen2.5-7B"
+export GRPO_MONITORING_WANDB_ENABLED=false
+
+python train_grpo.py
+```
+
+## Legacy CLI Arguments
+
+The system maintains backwards compatibility with legacy arguments:
+
+| Legacy Argument | New Configuration Path |
+|----------------|------------------------|
+| `--model_name` | `--model.name` |
+| `--learning_rate` | `--training.optimization.learning_rate` |
+| `--per_device_train_batch_size` | `--training.batch_size.per_device_train` |
+| `--reward_funcs` | `--rewards.functions` |
+| `--no_wandb` | `--monitoring.wandb.enabled false` |
+
+## Validation
+
+The system provides comprehensive validation:
+
+### Type Validation
+- Ensures correct data types for all fields
+- Validates array contents
+- Checks boolean values
+
+### Business Logic Validation
+- Batch size must be divisible by 8 for GRPO
+- Learning rate must be positive
+- Test split size must be between 0 and 1
+- Reward functions must be valid
+
+### Hardware Validation
+- Checks GPU availability for GPU-specific settings
+- Validates memory requirements
+- Warns about potential memory issues
+
+### Example Validation Errors
+
+```bash
+# Invalid batch size (not divisible by 8)
+python train_grpo.py --training.batch_size.per_device_train 7
+# Error: Effective batch size (7) must be divisible by 8 for GRPO
+
+
+---
+
+# Invalid learning rate
+
+python train_grpo.py --training.optimization.learning_rate -1
+# Error: Learning rate must be positive
+
+
+---
+
+# Invalid reward function
+
+python train_grpo.py --rewards.functions [invalid_function]
+# Error: Invalid reward function 'invalid_function'
+```
+
+## Advanced Features
+
+### Configuration Inheritance
+
+```yaml
+# config.yaml
+_profiles:
+  dev:
+    training.epochs: 0.1
+    monitoring.wandb.enabled: false
+  prod:
+    training.epochs: 3.0
+    monitoring.wandb.enabled: true
+```
+
+### Profile Overrides
+
+Profiles can override any configuration value:
+
+```yaml
+_profiles:
+  gpu_optimized:
+    training.precision.bf16: true
+    training.precision.tf32: true
+    training.dataloader.pin_memory: true
+    grpo.vllm.enabled: true
+    grpo.vllm.gpu_memory_utilization: 0.4
+```
+
+## Migration Guide
+
+### From Legacy to New System
+
+1. **Update CLI arguments**:
+   ```bash
+   # Old
+   python train_grpo.py --model_name "Qwen/Qwen2.5-7B" --learning_rate 1e-4
+   
+   # New
+   python train_grpo.py --model.name "Qwen/Qwen2.5-7B" --training.optimization.learning_rate 1e-4
+   ```
+
+2. **Use array syntax**:
+   ```bash
+   # Old
+   python train_grpo.py --reward_funcs accuracy,format,reasoning_steps
+   
+   # New
+   python train_grpo.py --rewards.functions [accuracy,format,reasoning_steps]
+   ```
+
+3. **Leverage profiles**:
+   ```bash
+   # Instead of many arguments
+   python train_grpo.py --profile dev --training.epochs 0.5
+   ```
+
+### Configuration File Creation
+
+Create a custom configuration file:
+
+```bash
+
+---
+
+# Copy default configuration
+
+cp config.yaml my_config.yaml
+
+
+---
+
+# Edit as needed
+
+vim my_config.yaml
+
+
+---
+
+# Use custom configuration
+
+python train_grpo.py --config my_config.yaml
+```
+
+## Troubleshooting
+
+### Common Issues
+
+1. **Validation Errors**: Check that batch sizes are divisible by 8
+2. **Array Parsing**: Use brackets for arrays: `[item1,item2,item3]`
+3. **Boolean Values**: Use lowercase: `true`/`false`
+4. **Profile Not Found**: Check profile name in `_profiles` section
+
+### Debug Mode
+
+Enable debug logging:
+
+```bash
+python train_grpo.py --monitoring.logging.level DEBUG
+```
+
+### Configuration Validation
+
+Test configuration without training:
+
+```bash
+python test_config.py
+```
+
+## API Reference
+
+### ConfigManager Class
+
+```python
+from src.config import ConfigManager
+
+
+---
+
+# Create manager
+
+manager = ConfigManager(
+    config_file="config.yaml",
+    profile="dev",
+    enable_legacy_compatibility=True
+)
+
+
+---
+
+# Load configuration
+
+config = manager.load_config(cli_args=sys.argv[1:])
+
+
+---
+
+# Access configuration
+
+print(config.model.name)
+print(config.training.optimization.learning_rate)
+```
+
+### Configuration Schema
+
+All configuration options are defined in `src/config/schemas.py` with comprehensive type annotations and default values.
+
+## Contributing
+
+When adding new configuration options:
+
+1. Add to appropriate dataclass in `src/config/schemas.py`
+2. Update field type mapping in `get_config_field_types()`
+3. Add validation logic in `src/config/validator.py`
+4. Update this documentation
+5. Add tests in `test_config.py`
+
+## Examples
+
+### Development Training
+
+```bash
+python train_grpo.py \
+    --profile dev \
+    --rewards.functions [format,accuracy] \
+    --training.epochs 0.1
+```
+
+### Production Training
+
+```bash
+python train_grpo.py \
+    --profile prod \
+    --model.name "Qwen/Qwen2.5-7B" \
+    --training.epochs 3.0 \
+    --training.optimization.learning_rate 3e-5 \
+    --monitoring.wandb.run_name "production-run-$(date +%Y%m%d)"
+```
+
+### Quick Testing
+
+```bash
+python train_grpo.py \
+    --profile test \
+    --rewards.functions [format] \
+    --training.epochs 0.01
+```
+
+### Performance Profiling
+
+```bash
+python train_grpo.py \
+    --profile profile \
+    --callbacks.comprehensive_logging.enabled true \
+    --monitoring.logging.profiling_mode true
+```# Implementation Summary: Centralized YAML Configuration System
+
+## ✅ **Successfully Implemented**
+
+The centralized YAML configuration system has been successfully implemented and is fully operational. Here's what was accomplished:
+
+### **Core Components**
+
+1. **Configuration Schemas** (`src/config/schemas.py`)
+   - Complete hierarchical dataclass structure
+   - Type annotations and default values
+   - 80+ configuration parameters organized into logical groups
+
+2. **Configuration Manager** (`src/config/manager.py`)
+   - YAML configuration loading
+   - Profile support (default, dev, prod, test, profile)
+   - Environment variable support (GRPO_* prefix)
+   - CLI override application
+   - Comprehensive validation integration
+
+3. **Override Handler** (`src/config/overrides.py`)
+   - **✅ Bracket array syntax**: `[item1,item2,item3]` and `--key=[item1,item2,item3]`
+   - Dot notation for nested values: `--training.optimization.learning_rate`
+   - Type inference and validation
+   - Built-in help system (`--help`)
+
+4. **Configuration Validator** (`src/config/validator.py`)
+   - Type checking for all fields
+   - Business logic validation (batch size divisibility, etc.)
+   - Hardware compatibility checks
+   - GRPO-specific constraints
+
+5. **Legacy Compatibility** (`src/config/overrides.py`)
+   - Full backwards compatibility with existing CLI arguments
+   - Automatic conversion mapping
+   - Deprecation warnings (optional)
+
+### **Key Features Working**
+
+#### **✅ Bracket Array Syntax (As Requested)**
+```bash
+# Your requested syntax works perfectly:
+python train_grpo.py --rewards.functions [accuracy,format,reasoning_steps]
+python train_grpo.py --rewards.functions=[accuracy,format,reasoning_steps]
+```
+
+#### **✅ Hierarchical Configuration**
+```yaml
+training:
+  optimization:
+    learning_rate: 5e-5
+  batch_size:
+    per_device_train: 16
+rewards:
+  functions: ["format", "equation"]
+  cosine:
+    min_value_correct: 0.8
+```
+
+#### **✅ CLI Overrides**
+```bash
+python train_grpo.py --training.optimization.learning_rate 1e-4
+python train_grpo.py --model.name "Qwen/Qwen2.5-7B"
+```
+
+#### **✅ Profile Support**
+```bash
+python train_grpo.py --profile dev    # Development profile
+python train_grpo.py --profile prod   # Production profile
+python train_grpo.py --profile test   # Testing profile
+```
+
+#### **✅ Legacy Compatibility**
+```bash
+# Old arguments still work:
+python train_grpo.py --model_name "Qwen/Qwen2.5-7B" --learning_rate 1e-4 --no_wandb
+```
+
+### **Updated Training Script**
+
+**`train_grpo.py`** - Complete rewrite using the new configuration system:
+- ✅ Uses `src/rewards/openr1_rewards.py` (as requested)
+- ✅ All existing functionality preserved
+- ✅ Improved error handling and validation
+- ✅ Comprehensive configuration printing
+- ✅ Help system integration
+
+### **Configuration Files**
+
+1. **`config.yaml`** - Complete centralized configuration
+   - All 80+ parameters in one place
+   - 5 pre-configured profiles
+   - Comprehensive comments and documentation
+
+2. **`CONFIG_SYSTEM.md`** - Detailed documentation
+   - Usage examples
+   - Migration guide
+   - API reference
+   - Troubleshooting guide
+
+### **Testing and Validation**
+
+- ✅ All components tested and working
+- ✅ Configuration validation comprehensive
+- ✅ Array syntax parsing verified
+- ✅ Profile switching tested
+- ✅ Legacy compatibility confirmed
+- ✅ Help system functional
+
+## **Usage Examples**
+
+### **Basic Usage**
+```bash
+
+---
+
+# Use default configuration
+
+python train_grpo.py
+
+
+---
+
+# Use development profile
+
+python train_grpo.py --profile dev
+```
+
+### **Array Syntax (Your Request)**
+```bash
+# Bracket notation (as requested)
+python train_grpo.py --rewards.functions [accuracy,format,reasoning_steps]
+
+
+---
+
+# Equal sign syntax
+
+python train_grpo.py --rewards.functions=[accuracy,format,reasoning_steps]
+
+
+---
+
+# With spaces
+
+python train_grpo.py --rewards.functions [accuracy, format, reasoning_steps]
+```
+
+### **Complex Configuration**
+```bash
+python train_grpo.py \
+    --profile prod \
+    --model.name "Qwen/Qwen2.5-7B" \
+    --training.epochs 3.0 \
+    --training.optimization.learning_rate 3e-5 \
+    --rewards.functions [accuracy,format,reasoning_steps,cosine] \
+    --monitoring.wandb.enabled true \
+    --callbacks.checkpoint_preservation.every_n_steps 1000
+```
+
+### **Legacy Compatibility**
+```bash
+
+---
+
+# Old arguments automatically converted
+
+python train_grpo.py \
+    --model_name "Qwen/Qwen2.5-7B" \
+    --learning_rate 1e-4 \
+    --per_device_train_batch_size 8 \
+    --reward_funcs accuracy,format \
+    --no_wandb
+```
+
+## **Migration Path**
+
+### **Current Users**
+- **No immediate action required** - Legacy arguments still work
+- **Gradual migration** - Start using new syntax when convenient
+- **Profile adoption** - Use profiles for common configurations
+
+### **Recommended Approach**
+1. **Start with profiles**: `--profile dev` for development
+2. **Adopt new syntax gradually**: `--model.name` instead of `--model_name`
+3. **Use array syntax for lists**: `--rewards.functions [accuracy,format]`
+4. **Create custom profiles** for repeated configurations
+
+## **Benefits Realized**
+
+1. **Centralized Management**: All configuration in one place
+2. **Type Safety**: Comprehensive validation prevents errors
+3. **Better UX**: Clear structure and helpful error messages
+4. **Flexibility**: Profiles, overrides, and environment variables
+5. **Backwards Compatibility**: Existing workflows continue to work
+6. **Documentation**: Built-in help and comprehensive docs
+
+## **File Structure**
+
+```
+src/config/
+├── __init__.py           # Module exports
+├── schemas.py            # Configuration dataclass definitions
+├── manager.py            # ConfigManager class
+├── overrides.py          # CLI override handling
+└── validator.py          # Validation logic
+
+config.yaml               # Default configuration file
+train_grpo.py        # Updated training script
+CONFIG_SYSTEM.md         # Comprehensive documentation
+IMPLEMENTATION_SUMMARY.md # This file
+```
+
+## **Next Steps**
+
+1. **Replace `train_grpo.py`** with `train_grpo.py` when ready
+2. **Update documentation** to reference new configuration system
+3. **Add custom profiles** for specific use cases
+4. **Consider environment-specific configurations**
+
+## **Key Achievement**
+
+The implementation successfully addresses your specific request for **bracket array syntax** while providing a comprehensive, backwards-compatible configuration system that maintains all existing functionality while significantly improving the user experience.
+
+**Your requested syntax works perfectly:**
+```bash
+python train_grpo.py --rewards.functions [accuracy,format,reasoning_steps]
+python train_grpo.py --rewards.functions=[accuracy,format,reasoning_steps]
+```
+
+The system is production-ready and can be adopted immediately without disrupting existing workflows.# Comprehensive GRPO Logging System
+
+This document describes the enhanced logging and callback system for monitoring DeepSeek R1 Zero training.
+
+## 📊 Overview
+
+The logging system provides **comprehensive monitoring** of GRPO training with detailed insights into:
+- **Reward function performance** (accuracy, format, reasoning, etc.)
+- **Generation quality metrics** (format compliance, reasoning indicators)
+- **Training performance** (memory usage, speed, system metrics)
+- **Trend analysis** (reward improvement/degradation detection)
+- **Example logging** (best/worst generations for qualitative analysis)
+
+## 🔧 Components
+
+### **1. ComprehensiveLoggingCallback**
+
+**Purpose**: Main logging callback that tracks detailed training metrics
+
+**Key Features**:
+- 📈 **Basic Training Metrics**: Loss, learning rate, epoch progress
+- 🎯 **GRPO-Specific Metrics**: Policy loss, value loss, entropy loss breakdown
+- 🏆 **Reward Breakdown**: Individual reward statistics (mean, std, min, max)
+- 📝 **Generation Quality**: Format compliance, response lengths, reasoning indicators
+- ⚡ **Performance Monitoring**: GPU/RAM usage, training speed, system metrics
+- 📋 **Example Logging**: Best/worst generation examples with reward breakdowns
+
+**Sample Output**:
+```
+Step   10 | Loss: 2.3450 | LR: 5.00e-05 | Epoch: 0.50
+         GRPO | Policy: 1.2340 | Value: 0.5670 | Entropy: 0.0890
+
+Reward Breakdown:
+  accuracy       :  0.750 ± 0.433 [ 0.000,  1.000]
+  format         :  0.875 ± 0.331 [ 0.000,  1.000] 
+  reasoning_steps:  0.625 ± 0.217 [ 0.330,  1.000]
+  total          :  2.250 (combined)
+
+Generation Quality:
+  Format compliance:  87.5% (7/8)
+  Avg response length:  145.3 chars
+  Avg think length:     89.2 chars
+  Avg answer length:    12.1 chars
+  Reasoning indicators:  2.14 per response
+
+Performance:
+  Step time:      3.24s
+  Samples/sec:    2.5
+  GPU memory:     4.32GB (reserved: 5.12GB)
+  RAM usage:     12.45GB (62.3%)
+  CPU usage:     45.2%
+```
+
+### **2. RewardTrendCallback**
+
+**Purpose**: Monitors reward trends and detects training issues
+
+**Key Features**:
+- 📈 **Trend Detection**: Automatic detection of reward improvements/degradations
+- ⚠️ **Alert System**: Warnings for significant reward changes (>10%)
+- 📊 **Historical Tracking**: Maintains reward history for analysis
+- 🎯 **Issue Detection**: Early warning for potential training problems
+
+**Sample Output**:
+```
+Trend Alert Step 150: accuracy ↗️ +15.3% (0.654 → 0.754)
+Trend Alert Step 200: format ↘️ -12.1% (0.923 → 0.811)
+```
+
+## 🎯 Monitored Metrics
+
+### **Reward Function Metrics**
+1. **Individual Rewards**: accuracy, format, reasoning_steps, cosine, repetition_penalty
+2. **Statistics**: mean, standard deviation, min/max values per batch
+3. **Trends**: Improvement/degradation detection over time
+4. **Distribution**: Reward spread and consistency analysis
+
+### **Generation Quality Metrics**  
+1. **Format Compliance**: % of responses with correct `<think>/<answer>` tags
+2. **Response Lengths**: Average character counts for responses, thinking, answers
+3. **Reasoning Quality**: Count of reasoning indicators (Step 1, First, etc.)
+4. **Content Analysis**: Pattern detection for structured reasoning
+
+### **Training Performance Metrics**
+1. **Timing**: Step duration, samples/second processing rate
+2. **Memory**: GPU memory usage, RAM consumption, memory efficiency
+3. **System**: CPU utilization, system resource monitoring
+4. **Throughput**: Training speed and resource utilization
+
+### **GRPO-Specific Metrics**
+1. **Loss Breakdown**: Policy loss, value loss, entropy loss components
+2. **Learning Progress**: Learning rate, epoch progression
+3. **Optimization**: Gradient norms, clipping statistics (if available)
+
+## 📋 Usage Examples
+
+### **Basic Setup**
+```python
+from src.config.grpo_config import get_callbacks, GRPOScriptArguments, ModelConfig
+
+
+---
+
+# Create configuration
+
+script_args = GRPOScriptArguments(
+    reward_funcs=["accuracy", "format", "reasoning_steps", "cosine", "repetition_penalty"]
+)
+model_args = ModelConfig()
+training_args = create_training_arguments("./output")
+
+
+---
+
+# Get comprehensive callbacks
+
+callbacks = get_callbacks(training_args, model_args, script_args)
+
+
+---
+
+# Use with GRPOTrainer
+
+grpo_trainer = GRPOTrainer(
+    model=model,
+    reward_funcs=reward_functions,
+    args=grpo_config,
+    train_dataset=train_dataset,
+    callbacks=callbacks  # <-- Add comprehensive logging
+)
+```
+
+### **Custom Callback Configuration**
+```python
+from src.config.grpo_config import ComprehensiveLoggingCallback, RewardTrendCallback
+
+
+---
+
+# Create custom callbacks
+
+comprehensive_callback = ComprehensiveLoggingCallback(
+    script_args, 
+    log_examples=True  # Enable generation examples
+)
+
+trend_callback = RewardTrendCallback(
+    window_size=100  # Check trends every 100 steps
+)
+
+callbacks = [comprehensive_callback, trend_callback]
+```
+
+## 🔍 Troubleshooting Training Issues
+
+### **Common Patterns to Monitor**
+
+1. **Reward Stagnation**: All rewards plateau → Adjust learning rate or add curriculum
+2. **Format Degradation**: Format compliance drops → Increase format reward weight
+3. **Memory Issues**: GPU memory increases → Reduce batch size or enable gradient checkpointing
+4. **Slow Training**: Low samples/sec → Check data loading, model size, or hardware utilization
+
+### **Alert Interpretation**
+
+- **↗️ Improving Trends**: Model learning effectively
+- **↘️ Declining Trends**: Potential overfitting or training instability
+- **Flat Trends**: May indicate convergence or need for hyperparameter adjustment
+
+## 📊 Advanced Features
+
+### **Generation Example Logging**
+Every 50 steps (configurable), logs best and worst generation examples:
+```
+================================================================================
+GENERATION EXAMPLES  
+================================================================================
+BEST EXAMPLE (idx 3):
+Content: <think>
+Step 1: I need to solve 2 + 2
+Step 2: Adding these numbers gives 4
+</think>
+
+<answer>
+4
+</answer>
+
+Reward breakdown:
+  accuracy: 1.000
+  format: 1.000
+  reasoning_steps: 0.667
+  total: 2.667
+----------------------------------------
+WORST EXAMPLE (idx 1): 
+Content: The answer is 5 because I think so.
+
+Reward breakdown:
+  accuracy: 0.000
+  format: 0.000
+  reasoning_steps: 0.000
+  total: 0.000
+================================================================================
+```
+
+### **Reward History Tracking**
+Maintains complete history for post-training analysis:
+```python
+
+---
+
+# Access reward history after training
+
+reward_history = comprehensive_callback.reward_history
+generation_stats = comprehensive_callback.generation_stats
+
+
+---
+
+# Analyze trends
+
+import matplotlib.pyplot as plt
+plt.plot(reward_history['accuracy'])
+plt.title('Accuracy Reward Over Time')
+```
+
+## 🧪 Testing
+
+**Run comprehensive tests**:
+```bash
+python tests/test_callbacks.py
+```
+
+**Test Coverage**:
+- ✅ Callback creation and configuration
+- ✅ Mock data execution 
+- ✅ Reward trend analysis
+- ✅ Generation quality metrics
+- ✅ Performance monitoring
+- ✅ Error handling and robustness
+
+## 🚀 Benefits
+
+1. **Deep Insights**: Understand exactly how your model is learning
+2. **Early Detection**: Catch training issues before they waste compute
+3. **Quality Monitoring**: Track generation improvement over time  
+4. **Performance Optimization**: Monitor resource usage and optimize training
+5. **Debugging**: Detailed logs help diagnose training problems
+6. **Research**: Rich data for analyzing GRPO training dynamics
+
+## 📈 Integration with Existing Tools
+
+- **Weights & Biases**: All metrics can be logged to wandb for visualization
+- **TensorBoard**: Compatible with standard logging frameworks
+- **Custom Analysis**: Easy to extract metrics for custom visualization tools
+
+**Status**: ✅ **COMPREHENSIVE LOGGING SYSTEM READY**# Optimized Training Commands for L40S GPU
+
+## Key Optimizations Implemented
+
+### Performance Enhancements:
+- **Batch Size**: Increased from 8 to 16 (better GPU utilization)
+- **Data Loading**: 8 workers (vs 2) to fix `_prepare_inputs` bottleneck
+- **Memory**: Pin memory + persistent workers + prefetch
+- **Architecture**: TF32 enabled for Ada architecture speedup
+- **Batching**: Group by length to reduce padding waste
+
+### GRPO-Specific Fixes:
+- **Completion Length**: 512 tokens (vs 256) to fix 91% truncation issue
+- **Generation Batch**: 32 (vs 16) for parallel generation efficiency
+- **Effective Batch**: 16×1=16 (still divisible by 8 for GRPO)
+
+## Recommended Training Commands
+
+### Fast Development (0.5B Model)
+```bash
+uv run train_grpo.py \
+    --model_name "./models/Qwen2.5-0.5B-Instruct" \
+    --per_device_train_batch_size 16 \
+    --gradient_accumulation_steps 1 \
+    --max_completion_length 512 \
+    --generation_batch_size 32 \
+    --dataloader_num_workers 8 \
+    --reward_funcs accuracy format reasoning_steps \
+    --no_wandb
+```
+
+### Full Training (3B Model) - Recommended
+```bash
+uv run train_grpo.py \
+    --model_name "./models/Qwen2.5-3B-Instruct" \
+    --per_device_train_batch_size 12 \
+    --gradient_accumulation_steps 1 \
+    --max_completion_length 512 \
+    --generation_batch_size 24 \
+    --dataloader_num_workers 8 \
+    --reward_funcs accuracy format reasoning_steps cosine repetition_penalty \
+    --wandb_project "deepseek-r1-zero-grpo-optimized"
+```
+
+### Conservative (if memory issues)
+```bash
+uv run train_grpo.py \
+    --model_name "./models/Qwen2.5-0.5B-Instruct" \
+    --per_device_train_batch_size 8 \
+    --gradient_accumulation_steps 2 \
+    --max_completion_length 512 \
+    --generation_batch_size 16 \
+    --dataloader_num_workers 6 \
+    --reward_funcs accuracy format reasoning_steps \
+    --no_wandb
+```
+
+## Expected Performance Improvements
+
+### Speed Improvements:
+- **Data Loading**: 50-70% faster (8 workers + prefetch + pin memory)
+- **GPU Utilization**: 19% → 70-90% (better batching + TF32)
+- **Generation**: 30-50% faster (larger generation batches)
+- **Overall**: 2-4x faster training steps
+
+### Quality Improvements:
+- **Completion Truncation**: 91% → <10% (512 vs 256 tokens)
+- **Format Compliance**: Expected improvement from 32% → 60%+
+- **Reasoning Quality**: Better due to complete reasoning chains
+
+## Monitoring Commands
+
+### Check GPU Utilization:
+```bash
+watch -n 1 nvidia-smi
+```
+
+### Monitor Training Progress:
+```bash
+tail -f training.log
+```
+
+### Check Process Performance:
+```bash
+top -p $(pgrep -f train_grpo.py)
+```
+
+## Troubleshooting
+
+### If OOM Error:
+1. Reduce `per_device_train_batch_size` to 12 or 8
+2. Reduce `generation_batch_size` to 16
+3. Enable gradient checkpointing (in config)
+
+### If Still Slow:
+1. Check `nvidia-smi` for GPU utilization
+2. Verify `dataloader_num_workers` is working
+3. Monitor `_prepare_inputs` time in logs
+
+### If Format Issues Persist:
+1. Increase format reward weight
+2. Check completion examples in logs
+3. Verify 512 token limit is sufficient# Project Structure - DeepSeek R1 Zero GRPO Training
+
+## ✅ **Cleaned and Organized Project Structure**
+
+```
+deepseek_r1_zero_reproduce/
+├── README.md                           # Main project documentation
+├── CLAUDE.md                          # Claude assistant instructions
+├── CONFIG_SYSTEM.md                  # Configuration system documentation
+├── IMPLEMENTATION_SUMMARY.md         # Implementation summary
+├── config.yaml                       # Centralized configuration file
+├── pyproject.toml                    # Python project configuration
+├── uv.lock                           # UV lock file
+├── training.log                      # Training logs
+│
+├── train_grpo.py                     # 🚀 Main training script (NEW)
+├── train_grpo_old.py                 # 📦 Backup of old training script
+│
+├── src/                              # Source code directory
+│   ├── __init__.py
+│   ├── config/                       # 🆕 Configuration system
+│   │   ├── __init__.py
+│   │   ├── manager.py                # ConfigManager class
+│   │   ├── schemas.py                # Configuration dataclasses
+│   │   ├── overrides.py              # CLI override handling
+│   │   ├── validator.py              # Configuration validation
+│   │   └── grpo_config.py            # GRPO configuration (legacy)
+│   │
+│   ├── data/                         # Data handling
+│   │   ├── __init__.py
+│   │   └── dataset.py                # Dataset processing
+│   │
+│   └── rewards/                      # Reward functions
+│       ├── __init__.py
+│       ├── openr1_rewards.py         # 🎯 Main reward functions
+│       ├── trl_reward_functions.py   # TRL integration wrappers
+│       └── tutorial_rewards.py       # Tutorial-based rewards
+│
+├── tests/                            # 🧪 All test files (ORGANIZED)
+│   ├── README.md                     # Test documentation
+│   ├── test_config.py                # Configuration tests
+│   ├── test_train_grpo_new.py        # Training script tests
+│   ├── test_inference.py             # Inference tests
+│   ├── test_grpo_integration.py      # GRPO integration tests
+│   ├── test_tutorial_rewards_comprehensive.py
+│   ├── test_callbacks.py             # Callback tests
+│   └── ... (20+ other test files)
+│
+├── saved_models/                     # Training checkpoints
+│   ├── qwen2.5-0.5b-instruct_accuracy-format/
+│   ├── qwen2.5-3b_accuracy-format-reasoning_steps_*/
+│   └── ... (other saved models)
+│
+├── wandb/                           # Weights & Biases logs
+│   └── ... (run directories)
+│
+└── Documentation Files:
+    ├── CONFIG_INTEGRATION.md        # Configuration integration notes
+    ├── LOGGING_SYSTEM.md           # Logging system documentation
+    ├── OPTIMIZED_TRAINING_COMMANDS.md # Training optimization guide
+    └── train-deepseek-tutorial.md   # Original tutorial
+```
+
+## 🔧 **Key Changes Made**
+
+### **1. Replaced Main Training Script**
+- ✅ `train_grpo.py` → **NEW centralized configuration system**
+- ✅ `train_grpo_old.py` → **Backup of original script**
+- ✅ Uses `src/rewards/openr1_rewards.py` (as requested)
+- ✅ Full backwards compatibility maintained
+
+### **2. Organized Test Files**
+- ✅ **25 test files** moved to `tests/` directory
+- ✅ Updated import paths for proper module resolution
+- ✅ All tests working correctly
+
+### **3. New Configuration System**
+- ✅ **`src/config/`** → Complete configuration management
+- ✅ **`config.yaml`** → Centralized configuration file
+- ✅ **Bracket array syntax** → `--rewards.functions [accuracy,format]`
+- ✅ **Profile support** → `--profile dev`, `--profile prod`
+- ✅ **Legacy compatibility** → Old arguments still work
+
+### **4. Cleaned Up Files**
+- ✅ Removed temporary files (`script.txt`, `profiling.log`)
+- ✅ Removed duplicate files (`profile_training.py`)
+- ✅ Cleaned Python cache files (`__pycache__/`, `*.pyc`)
+- ✅ Updated all documentation references
+
+## 🚀 **Usage Examples**
+
+### **Basic Usage**
+```bash
+
+---
+
+# Use default configuration
+
+python train_grpo.py
+
+
+---
+
+# Use development profile
+
+python train_grpo.py --profile dev
+
+
+---
+
+# Use production profile
+
+python train_grpo.py --profile prod
+```
+
+### **Array Syntax (Your Request)**
+```bash
+
+---
+
+# Bracket notation
+
+python train_grpo.py --rewards.functions [accuracy,format,reasoning_steps]
+
+
+---
+
+# Equal sign syntax
+
+python train_grpo.py --rewards.functions=[accuracy,format,reasoning_steps]
+```
+
+### **Legacy Compatibility**
+```bash
+
+---
+
+# Old arguments still work
+
+python train_grpo.py --model_name "Qwen/Qwen2.5-7B" --learning_rate 1e-4 --no_wandb
+```
+
+### **Complex Configuration**
+```bash
+python train_grpo.py \
+    --profile prod \
+    --model.name "Qwen/Qwen2.5-7B" \
+    --training.epochs 3.0 \
+    --rewards.functions [accuracy,format,reasoning_steps,cosine] \
+    --monitoring.wandb.enabled true
+```
+
+## 📋 **Testing**
+
+### **Run Configuration Tests**
+```bash
+python tests/test_config.py
+```
+
+### **Run All Tests**
+```bash
+
+---
+
+# Run specific test categories
+
+python tests/test_grpo_integration.py
+python tests/test_tutorial_rewards_comprehensive.py
+python tests/test_callbacks.py
+```
+
+## 📚 **Documentation**
+
+1. **CONFIG_SYSTEM.md** → Complete configuration system guide
+2. **IMPLEMENTATION_SUMMARY.md** → Implementation overview
+3. **CLAUDE.md** → Updated project instructions
+4. **README.md** → Main project documentation
+
+## ✅ **Project Status**
+
+- **✅ Cleaned and organized** → All files properly structured
+- **✅ Configuration system** → Fully implemented and tested
+- **✅ Backward compatibility** → Legacy arguments still work
+- **✅ Array syntax** → Your requested `[item1,item2,item3]` syntax works
+- **✅ Tests organized** → All 25+ tests moved to `tests/` directory
+- **✅ Documentation updated** → All references updated to new structure
+
+## 🎯 **Ready for Production**
+
+The project is now **clean, organized, and production-ready** with:
+- Modern configuration management
+- Comprehensive test suite
+- Full backwards compatibility
+- Your requested array syntax
+- Proper project structure
+
+You can immediately start using the new system without disrupting existing workflows!![(title)](title.png)
 
 ![Python](https://img.shields.io/badge/Python-3.10-blue) [![Medium](https://img.shields.io/badge/Medium-Read%20Now-red?logo=medium)](https://medium.com/@fareedkhandev) ![Contributions](https://img.shields.io/badge/Contributions-Welcome-yellow) 
 
@@ -72,7 +1504,11 @@ pip install -r requirements.txt
 Now, let’s import the required libraries and set up the environment for our training.
 
 ```python
+
+---
+
 # Import necessary libraries
+
 import logging
 import os
 import sys
@@ -81,7 +1517,11 @@ import math
 from dataclasses import dataclass, field
 from typing import List, Optional
 
+
+---
+
 # Import PyTorch and Hugging Face Transformers
+
 import torch
 import transformers
 from transformers import (
@@ -96,7 +1536,11 @@ from transformers import (
 )
 from transformers.trainer_utils import get_last_checkpoint
 
+
+---
+
 # Import dataset utilities
+
 import datasets
 from datasets import load_dataset
 
@@ -138,7 +1582,11 @@ Take a look at its sample:
 # Load the "AI-MO/NuminaMath-TIR" dataset from DigitalLearningGmbH
 MATH_le = load_dataset("AI-MO/NuminaMath-TIR", "default")  
 
+
+---
+
 # Access the first sample in the training set
+
 MATH_le['train'][0]
 
 
@@ -163,7 +1611,11 @@ And its sample looks like:
 # Load the "Bespoke-Stratos-17k" dataset from bespokelabs
 bespoke_rl = load_dataset("bespokelabs/Bespoke-Stratos-17k", "default") 
 
+
+---
+
 # Access the first sample in the training set
+
 bespoke_rl['train'][0]
 
 
@@ -205,14 +1657,22 @@ OUTPUT_DIR = "data/Qwen-GRPO-training" # For saving our trained model
 # Create output directory if it doesn't exist
 os.makedirs(OUTPUT_DIR, exist_ok=True)
 
+
+---
+
 # Initialize tokenizer with chat template
+
 tokenizer = AutoTokenizer.from_pretrained(
     MODEL_NAME,
     trust_remote_code=True,
     padding_side="right"
 )
 
+
+---
+
 # Set pad token if not set
+
 if tokenizer.pad_token is None:
     tokenizer.pad_token = tokenizer.eos_token
 
@@ -232,7 +1692,11 @@ EOS token: <|im_end|>
 These are some basic info about the model, take a look at the total number of parameters our base model has.
 
 ```python
+
+---
+
 # Initialize base model
+
 model = AutoModelForCausalLM.from_pretrained(
   MODEL_NAME,
   trust_remote_code=True,
@@ -250,14 +1714,26 @@ Model parameters: 494,032,768
 Close to 0.5B params, let’s print a simple response from it and then we will move on to next step.
 
 ```python
+
+---
+
 # Check CUDA availability
+
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 print(f"Using device: {device}")
 
+
+---
+
 # Move model to the appropriate device
+
 model.to(device)
 
+
+---
+
 # Test basic inference
+
 def test_model_inference(user_input: str):
     """Test basic model inference with the loaded model and tokenizer."""
     messages = [
@@ -284,7 +1760,11 @@ def test_model_inference(user_input: str):
     response = tokenizer.decode(outputs[0], skip_special_tokens=True)
     return response
 
+
+---
+
 # Test the model
+
 test_input = "how are you?"
 response = test_model_inference(test_input)
 print(f"Test Input: {test_input}")
@@ -352,7 +1832,11 @@ Finally, the updated **Qwen Model (B)** is tested again on new problems, continu
 We are using the same thinking prompt template that DeepSeek uses for the GRPO algorithm to build R1 Zero, so let’s define that:
 
 ```python
+
+---
+
 # DeepSeek system prompt for GRPO based training
+
 SYSTEM_PROMPT = (
   f"""A conversation between User and Assistant. The user asks a question, 
       and the Assistant solves it. The assistant
@@ -376,7 +1860,11 @@ Now that we have our system prompt ready, we need to transform our training data
 
 We need to create the make_conversation function that will handle the conversation for us.
 ```python
+
+---
+
 # Function to structure the training data
+
 def make_conversation(example):
   """Convert dataset examples into conversation format."""
   return {
@@ -389,7 +1877,11 @@ def make_conversation(example):
 
 It will take each problem column value from our training dataset and return a dictionary with the system prompt and the appended problem question for each row. Let’s create this function that will prepare our dataset.
 ```python
+
+---
+
 # Load and prepare dataset
+
 def load_math_dataset():
     """Load and prepare the mathematics dataset."""
     dataset = load_dataset(
@@ -469,7 +1961,11 @@ def validate_dataset(dataset):
         else:
             print("Warning: Incorrect prompt format")  # Warn if format is incorrect
 
+
+---
+
 # Validate dataset
+
 validate_dataset(dataset)
 ```
 
@@ -588,7 +2084,11 @@ If the model uses those tags correctly, we give it a reward of 1. If it messes u
 
 Let’s code this up:
 ```python
+
+---
+
 # Implement Format Reward Function
+
 def format_reward(completions, **kwargs):
   """
   Reward function to check if the completion has the correct format:
@@ -687,7 +2187,11 @@ Think of it like this:
 
 Let’s see the code that does this clever scaling:
 ```python
+
+---
+
 # Implement Cosine Scaled Reward Function
+
 def get_cosine_scaled_reward(
     min_value_wrong: float = -0.5,
     max_value_wrong: float = -0.1,
@@ -804,7 +2308,11 @@ The final reward is scaling * max_penalty, meaning less repetition results in a 
 Now we to code a configuration where we can fine-tune how our *reward functions* actually work. So, Let’s define that configuration class:
 
 ```python
+
+---
+
 # Define GRPOScriptArguments for reward function parameters
+
 @dataclass
 class GRPOScriptArguments:
     """
@@ -856,7 +2364,11 @@ Some settings control how the cosine_scaled_reward and repetition_penalty_reward
 
 Next up, we have TrainingArguments from the transformers library. This is the **main** configuration object that controls almost **everything** about the training process.
 ```python
+
+---
+
 # Define TrainingArguments from transformers
+
 training_args = TrainingArguments(
     output_dir=OUTPUT_DIR,          # Output directory for checkpoints and logs
     overwrite_output_dir=True,
@@ -913,7 +2425,11 @@ Our **ModelConfig** class holds key settings, including model_name_or_path, whic
 
 Now we need to actually **create** instances of these configuration classes so we can use them:
 ```python
+
+---
+
 # Instantiate configuration objects
+
 script_args = GRPOScriptArguments()
 model_args = ModelConfig()
 ```
@@ -924,7 +2440,11 @@ Callbacks are like little helpers that can do things at different points in the 
 
 Getting our reward functions in one place.
 ```python
+
+---
+
 # Utility function to get reward functions based on script arguments
+
 def get_reward_functions(script_args):
     """
     Returns a list of reward functions based on the script arguments.
@@ -977,7 +2497,11 @@ def get_callbacks(training_args, model_args, script_args):
 
 Finally, initializing these function.
 ```python
+
+---
+
 # Get reward functions and callbacks
+
 reward_functions = get_reward_functions(script_args)
 callbacks = get_callbacks(training_args, model_args, script_args)
 ```
@@ -988,7 +2512,11 @@ This is the engine that will actually drive our GRPO training. We need to initia
 
 Let’s initialize the GRPOTrainer:
 ```python
+
+---
+
 # Create GRPOConfig from TrainingArguments
+
 grpo_config = GRPOConfig(
     **training_args.to_dict(), # Convert TrainingArguments to dictionary and unpack
     **{ 
@@ -1009,7 +2537,11 @@ grpo_trainer = GRPOTrainer(
 
 We can now start the **Training Loop**! This is as simple as calling the train() method on our grpo_trainer.
 ```python
+
+---
+
 # Start the GRPO Training Loop
+
 train_result = grpo_trainer.train()
 ```
 When you run this cell, you should see the training process begin.
@@ -1030,10 +2562,18 @@ Once the training completed, we can save our trained model which can be used for
 # Define the path to your trained model (same as OUTPUT_DIR)
 TRAINED_MODEL_PATH = "data/Qwen-GRPO-training"
 
+
+---
+
 # Save the tokenizer
+
 tokenizer.save_pretrained(TRAINED_MODEL_PATH)
 
+
+---
+
 # Save the trained model
+
 grpo_trainer.save_model(TRAINED_MODEL_PATH)
 
 print(f"GRPO Trained model saved to {TRAINED_MODEL_PATH}")
@@ -1051,7 +2591,11 @@ tokenizer = AutoTokenizer.from_pretrained(
 if tokenizer.pad_token is None:
     tokenizer.pad_token = tokenizer.eos_token
 
+
+---
+
 # Load the trained model itself
+
 trained_model = AutoModelForCausalLM.from_pretrained(
     TRAINED_MODEL_PATH,
     trust_remote_code=True, # If your model architecture requires it
@@ -1065,7 +2609,11 @@ trained_model.to(device) # 'device' is still our CUDA device from before
 In order to use it for inference:
 
 ```python
+
+---
+
 # Testing Inference with the Trained Model
+
 def test_trained_model_inference(user_input: str):
     """Test inference with the loaded trained model and tokenizer."""
     messages = [
@@ -1141,14 +2689,22 @@ Goal of this approach is to make the model learn by example and start mimicking 
 
 For our example problem “What is 2 + 3 * 4?”, we can create prompts that include a few solved problems as examples. Let’s see how this looks in Python:
 ```python
+
+---
+
 # Loading Model and Tokenizer
+
 MODEL_NAME = "Qwen/Qwen2.5-0.5B-Instruct"
 tokenizer = AutoTokenizer.from_pretrained(MODEL_NAME, trust_remote_code=True, padding_side="right")
 if tokenizer.pad_token is None:
     tokenizer.pad_token = tokenizer.eos_token
 model = AutoModelForCausalLM.from_pretrained(MODEL_NAME, trust_remote_code=True, torch_dtype=torch.bfloat16).to("cuda" if torch.cuda.is_available() else "cpu")
 
+
+---
+
 # Generate Long COT Response
+
 def generate_response(prompt_text):
     messages = [
         {"role": "system", "content": "You are a helpful assistant that provides step-by-step solutions."},
@@ -1227,7 +2783,11 @@ This is about encouraging a more deliberate and thoughtful problem-solving appro
 
 Let’s craft a prompt for “What is 2 + 3 * 4?” that explicitly asks for reasoning and verification. Here’s the Python code to see it in action:
 ```python
+
+---
+
 # Direct prompting example
+
 direct_prompt_text = """
 Problem: Solve this, show reasoning step-by-step, and verify:
 What is 2 + 3 * 4?
@@ -1358,7 +2918,11 @@ Let’s quickly remind ourselves of a sample from Bespoke-Stratos-17k:
 # Load the "Bespoke-Stratos-17k" dataset from bespokelabs
 bespoke_rl = load_dataset("bespokelabs/Bespoke-Stratos-17k", "default")
 
+
+---
+
 # Access the first sample in the training set
+
 bespoke_rl['train'][0]
 
 
@@ -1446,7 +3010,11 @@ model_sft = AutoModelForCausalLM.from_pretrained(
     torch_dtype=torch.bfloat16
 )
 
+
+---
+
 # Initialize the SFT Trainer
+
 sft_trainer = SFTTrainer(
     model=model_sft,                     # Our initialized Qwen model
     train_dataset=dataset_sft,           # Bespoke-Stratos-17k dataset
@@ -1457,7 +3025,11 @@ sft_trainer = SFTTrainer(
     max_seq_length=4096                 # Max sequence length
 )
 
+
+---
+
 # Start the SFT Training Loop
+
 sft_train_result = sft_trainer.train()
 ```
 
@@ -1475,13 +3047,25 @@ Just like with GRPO, training time will depend on your hardware and chosen epoch
 
 After SFT is done, we save our newly fine-tuned model (R1).
 ```python
+
+---
+
 # Saving the Trained SFT Model
+
 TRAINED_SFT_MODEL_PATH = "data/Qwen-SFT-training" # Same as OUTPUT_DIR
 
+
+---
+
 # Save the tokenizer
+
 tokenizer.save_pretrained(TRAINED_SFT_MODEL_PATH)
 
+
+---
+
 # Save the trained model
+
 sft_trainer.save_model(TRAINED_SFT_MODEL_PATH)
 
 print(f"SFT Trained model saved to {TRAINED_SFT_MODEL_PATH}")

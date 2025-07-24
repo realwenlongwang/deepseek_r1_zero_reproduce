@@ -7,11 +7,25 @@ wheels/
 *.egg-info
 
 # Virtual environments
-.venv
+.venv/
+
+# Model and training outputs
 models/
-wandb/
 saved_models/
-.history/
+
+# Cache and temporary directories
+wandb/
+unsloth_compiled_cache/
+__pycache__/
 .pytest_cache/
+.history/
+trainer_output/
+
+# IDE and editor files
 .vscode/
+.claude/
+
+# Log files
+*.log
+training.log
 

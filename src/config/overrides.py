@@ -369,6 +369,7 @@ def create_legacy_arg_mapping() -> Dict[str, str]:
         # System arguments
         "--seed": "system.seed",
         "--output_dir": "system.output_dir",
+        "--resume_from_checkpoint": "system.resume_from_checkpoint",
         
         # Monitoring arguments
         "--wandb_project": "monitoring.wandb.project",
