@@ -12,10 +12,10 @@ export RANK=0
 export WORLD_SIZE=1
 export LOCAL_RANK=0
 export MASTER_ADDR=localhost
-export MASTER_PORT=12356
+export MASTER_PORT=12354
 
 # CUDA/GPU environment variables
-export CUDA_VISIBLE_DEVICES=5  # Adjust as needed for your GPU setup
+export CUDA_VISIBLE_DEVICES=1  # Adjust as needed for your GPU setup
 
 # Python/UV environment variables
 export PYTHONPATH="${PYTHONPATH}:$(pwd)/src"

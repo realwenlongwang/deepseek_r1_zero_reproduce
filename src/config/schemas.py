@@ -133,6 +133,7 @@ class TrainingArgumentsConfig:
     remove_unused_columns: bool = False
     group_by_length: bool = True
     torch_compile: bool = False
+    torch_compile_mode: str = "default"
     
     # Optimizer configuration
     optim: str = "adamw_torch"
@@ -369,6 +370,7 @@ def get_config_field_types() -> Dict[str, str]:
         "TrainingArguments.remove_unused_columns": "bool",
         "TrainingArguments.group_by_length": "bool",
         "TrainingArguments.torch_compile": "bool",
+        "TrainingArguments.torch_compile_mode": "str",
         "TrainingArguments.optim": "str",
         "TrainingArguments.adam_beta1": "float",
         "TrainingArguments.adam_beta2": "float",

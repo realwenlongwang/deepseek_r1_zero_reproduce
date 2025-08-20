@@ -37,12 +37,12 @@ TrainingArguments:
   output_dir: null  # auto-generated if null
   overwrite_output_dir: false
   num_train_epochs: 1.0
-  max_steps: 10000  # -1 means use num_train_epochs instead
+  max_steps: 20000  # -1 means use num_train_epochs instead
   per_device_train_batch_size: 16
   per_device_eval_batch_size: 32
   gradient_accumulation_steps: 1
-  learning_rate: 0.00005
-  warmup_ratio: 0.05
+  learning_rate: 1.0e-5
+  warmup_ratio: 0.1
   weight_decay: 0.01
   logging_steps: 10
   eval_strategy: "no"
@@ -64,13 +64,12 @@ TrainingArguments:
   remove_unused_columns: false
   group_by_length: true
   torch_compile: false
-  
+  torch_compile_mode: "default"  # Options: "default", "reduce-overhead", "max-autotune", "max-autotune-no-cudagraphs"
   # Optimizer configuration
-  optim: "adamw_torch"  # Use adamw_8bit for memory efficiency
+  optim: "adamw_8bit"  # Use adamw_8bit for memory efficiency
   adam_beta1: 0.9       # Default: 0.9, user example: 0.9
   adam_beta2: 0.999     # Default: 0.999, user example: 0.99
   max_grad_norm: 1.0    # Default: 1.0, user example: 0.1
-  
   # Learning rate scheduler
   lr_scheduler_type: "linear"  # Default: linear, user example: cosine
 
@@ -94,7 +93,7 @@ GRPOConfig:
   max_prompt_length: 256      # User example: 256
   max_completion_length: 1024 # User example: 200
   num_generations: 8
-  use_vllm: true
+  use_vllm: false
   vllm_mode: "colocate"
   vllm_gpu_memory_utilization: 0.3
   use_liger_loss: false
@@ -178,16 +177,11 @@ _profiles:
     GRPOConfig.use_vllm: true
   
   # Production profile - full training, comprehensive logging
-  prod:
-    TrainingArguments.num_train_epochs: 3.0
-    TrainingArguments.per_device_train_batch_size: 8
-    TrainingArguments.learning_rate: 3.0e-5
-    monitoring.wandb.enabled: true
-    monitoring.logging.profiling_mode: false
-    callbacks.comprehensive_logging.enabled: false
-    callbacks.checkpoint_preservation.enabled: true
-    callbacks.checkpoint_preservation.every_n_steps: 1000
-    model.name: "Qwen/Qwen2.5-7B-Instruct"
+  unsloth:
+    model.name: "Qwen/Qwen2.5-7B"
+    model.unsloth.enabled: true
+    model.unsloth.gpu_memory_utilization: 0.85
+    GRPOConfig.use_vllm: false
   
   # Testing profile - minimal resources, quick validation
   debug:
@@ -204,7 +198,7 @@ _profiles:
     dataset.split.test_size: 128
     rewards.functions: ["format"]
     log_completions: false
-    wandb_log_unique_prompts: false
+    monitoring.wandb.enabled: false
   
   # Profiling profile - detailed performance analysis
   profile:

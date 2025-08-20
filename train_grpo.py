@@ -300,6 +300,12 @@ def create_training_arguments(config: Config, output_dir: str):
         "remove_unused_columns": training_args_config.remove_unused_columns,
         "group_by_length": training_args_config.group_by_length,
         "torch_compile": training_args_config.torch_compile,
+        "torch_compile_mode": training_args_config.torch_compile_mode,
+        "optim": training_args_config.optim,
+        "lr_scheduler_type": training_args_config.lr_scheduler_type,
+        "adam_beta1": training_args_config.adam_beta1,
+        "adam_beta2": training_args_config.adam_beta2,
+        "max_grad_norm": training_args_config.max_grad_norm,
     }
 
     return TrainingArguments(**training_args_dict)
