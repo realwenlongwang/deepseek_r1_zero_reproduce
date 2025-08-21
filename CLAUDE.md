@@ -191,6 +191,34 @@ Final answer here
 **Current default**: `gradient_checkpointing=False` for better performance when sufficient memory is available.
 
 ### Import/Dependency Issues
+
+#### CUDA/Unsloth Import Fix (Required)
+If you encounter `cannot find -lcuda` errors when importing unsloth, run this setup first:
+
+```bash
+# Option 1: Use setup script (recommended)
+source setup_env.sh
+
+# Option 2: Set environment manually
+export LIBRARY_PATH="/usr/local/cuda-12.4/targets/x86_64-linux/lib/stubs:$LIBRARY_PATH"
+export LD_LIBRARY_PATH="/usr/local/cuda-12.4/targets/x86_64-linux/lib/stubs:$LD_LIBRARY_PATH"
+```
+
+**Root cause**: Triton (used by bitsandbytes/unsloth) compiles CUDA utilities on first import and needs access to CUDA stub libraries for linking.
+
+#### Ninja Build System (Required for C++ Extensions)
+If you encounter "Ninja is required to load C++ extensions" errors:
+- Ninja is already included in dependencies (`ninja>=1.11.1.4`)
+- No additional setup required - ninja will be automatically available in the UV environment
+
+#### Import Order Warning
+You may see warnings about import order:
+```
+WARNING: Unsloth should be imported before transformers, peft to ensure all optimizations are applied.
+```
+This is expected and won't prevent functionality - the inference scripts handle this correctly.
+
+#### Other Dependencies
 - The project uses fallback implementations for `latex2sympy2` and `math_verify`
 - All reward functions have robust error handling
 - Missing dependencies won't break training
